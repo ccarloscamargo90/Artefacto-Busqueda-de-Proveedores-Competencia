@@ -51,25 +51,57 @@ con los botones **CSV** que ya tiene:
 Guarda esos archivos en un lugar seguro (o en este repo). Así no pierdes el trabajo
 acumulado aunque el artefacto original deje de estar disponible.
 
-## Cómo seguir desarrollándolo
+## Cómo correrlo en local
 
-Tal cual, este archivo es un componente de artefacto de Claude. Para convertirlo en una
-app que corra por tu cuenta hay que adaptar dos cosas que el entorno de artefactos provee
-de forma automática:
+Ya está montado como app **Vite + React + Tailwind**. Para correrlo en tu máquina:
 
-1. **Almacenamiento** — reemplazar `window.storage.get/set` por `localStorage`
-   (o un backend) para que el repositorio persista fuera del artefacto.
-2. **Llamadas a la IA** — la función `callClaude` hace `fetch` directo a
-   `https://api.anthropic.com/v1/messages` *sin* clave de API (el entorno de artefactos lo
-   autentica solo). Fuera de ahí necesitas una **API key de Anthropic** y, por seguridad,
-   un pequeño backend/proxy que la guarde (no exponer la clave en el navegador).
+1. Instala [Node.js](https://nodejs.org) 18 o superior.
+2. En la carpeta del proyecto:
+   ```bash
+   npm install
+   ```
+3. Crea tu archivo de clave: copia `.env.example` a `.env` y pega tu **API key de
+   Anthropic** (la sacas en https://console.anthropic.com → Settings → API Keys):
+   ```bash
+   cp .env.example .env
+   # luego edita .env y pon: ANTHROPIC_API_KEY=sk-ant-...
+   ```
+   El `.env` está en `.gitignore`, así que tu clave **no** se sube al repo.
+4. Arranca el servidor de desarrollo:
+   ```bash
+   npm run dev
+   ```
+   Abre la URL que imprime (normalmente http://localhost:5173).
 
-Si quieres, el siguiente paso es montar el proyecto como una app Vite + React + Tailwind
-lista para correr (`npm install` / `npm run dev`) con esas dos adaptaciones ya hechas.
+> Las búsquedas usan tu API key de Anthropic, así que **tienen un costo por uso** de la API
+> (es de pago por tokens). Revisa tus límites/saldo en la consola de Anthropic.
+
+### Cómo funciona (las dos piezas que Claude.ai daba gratis)
+
+- **Almacenamiento:** `src/storage-shim.ts` reemplaza `window.storage` por `localStorage`,
+  así tu repositorio y competidores persisten en el navegador. (Si pegas el archivo de vuelta
+  en un artefacto de Claude.ai, el shim no se activa y usa el almacenamiento del artefacto.)
+- **Llamadas a la IA:** en `localhost`, `callClaude` llama a `/api/anthropic`, un proxy del
+  servidor de desarrollo (`vite.config.ts`) que reenvía a la API de Anthropic inyectando tu
+  `ANTHROPIC_API_KEY`. Así la clave nunca queda expuesta en el navegador. Fuera de localhost
+  (p. ej. dentro de un artefacto de Claude.ai) llama directo, como antes.
+
+### Build / despliegue
+
+`npm run build` genera la carpeta `dist/` lista para servir. **Ojo:** el proxy `/api/anthropic`
+solo existe en el servidor de desarrollo. Para publicarlo en internet (Vercel/Netlify) hay que
+crear una *serverless function* que haga ese mismo reenvío con la API key — dímelo y lo armo.
 
 ## Estructura
 
 ```
+index.html              Punto de entrada HTML
+src/main.tsx            Arranque de React (carga el shim de storage)
 src/SupplierScout.tsx   Componente principal (export default SupplierScout)
+src/storage-shim.ts     window.storage → localStorage (para correr fuera del artefacto)
+src/index.css           Directivas de Tailwind
+vite.config.ts          Config de Vite + proxy /api/anthropic (inyecta la API key)
+tailwind.config.js      Config de Tailwind
+.env.example            Plantilla para tu ANTHROPIC_API_KEY (copiar a .env)
 README.md               Este archivo
 ```

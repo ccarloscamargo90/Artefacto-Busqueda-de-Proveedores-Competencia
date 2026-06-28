@@ -234,8 +234,11 @@ function robustParse(text, arrKey) {
   try { const end = s.lastIndexOf("}"); if (end !== -1) return JSON.parse(s.slice(0, end + 1)); } catch (_) {}
   return recoverArray(s, arrKey);
 }
+// En localhost (npm run dev) la llamada pasa por el proxy de Vite que inyecta la API key (ver vite.config.ts).
+// Dentro del artefacto de Claude.ai (cualquier otro host) se llama directo, sin key, como antes.
+const ANTHROPIC_API_URL = (typeof window !== "undefined" && window.location && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) ? "/api/anthropic" : "https://api.anthropic.com/v1/messages";
 async function callClaude(systemPrompt, userPrompt, arrKey, maxTokens = 4000) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], tools: [{ type: "web_search_20250305", name: "web_search" }] }) });
+  const res = await fetch(ANTHROPIC_API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], tools: [{ type: "web_search_20250305", name: "web_search" }] }) });
   let data; try { data = await res.json(); } catch (_) { throw new Error(`La API respondió ${res.status} y no se pudo leer. Reintenta.`); }
   if (data && (data.type === "error" || data.error)) throw new Error(data.error?.message || "La API devolvió un error. Reintenta.");
   if (!data || !Array.isArray(data.content)) throw new Error("Respuesta inesperada de la API. Reintenta.");
