@@ -12,5 +12,10 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Recomendado: define APP_PASSWORD para exigir login (HTTP Basic) en toda la app
+      # y así proteger el proxy /api/anthropic de uso ajeno (que gastaría tu API key).
+      # Opcional: APP_USER (usuario; por defecto "equipo").
+      - key: APP_PASSWORD
+        sync: false
       - key: NODE_VERSION
         value: "20"

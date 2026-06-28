@@ -264,7 +264,7 @@ function parseCsv(text) {
     const c = text[i];
     if (inQ) {
       if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
-      else field += c;
+      else if (c !== "\r") field += c;
     } else if (c === '"') inQ = true;
     else if (c === ",") { row.push(field); field = ""; }
     else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
@@ -465,7 +465,7 @@ export default function SupplierScout() {
 
   function exportSearchCSV() { const h = ["Empresa", "País", "Ciudad", "Puerto (IA)", "Puerto cercano", "Dist. puerto (km)", "Lat", "Lng", "Productos", "Certificaciones", "Origen TIPAT", "Cert. origen", "FOB USD", "Web", "Email", "Telefono", "Fuente", "Score"]; const rows = suppliers.map((s) => { const np = supplierNearestPort(s); const co = getSupplierCoords(s); return [s.company, s.country, s.city, s.nearestPort, np ? np.port.name : "", np ? Math.round(np.dist) : "", co ? co.lat : "", co ? co.lng : "", (s.products || []).join("; "), (s.certifications || []).join("; "), s.cptppOrigin, certMechanismFor(s.country) || "", s.indicativeFobUsd, s.website, s.email, s.phone, s.sourceUrl, s.affinityScore]; }); downloadCsv([h, ...rows], "busqueda_tipat_pp.csv"); }
   const POT_LABEL = { unset: "Sin evaluar", yes: "Con potencial", no: "Descartado" };
-  function exportRepoCSV() { const h = ["Empresa", "País", "Ciudad", "Puerto", "Origen TIPAT", "Cert. origen", "FOB USD", "Potencial", "Contactado", "Notas", "Web", "Email", "Telefono", "Fuente", "Score"]; const rows = repo.map((r) => [r.company, r.country, r.city, r.nearestPort, r.cptppOrigin, certMechanismFor(r.country) || "", r.indicativeFobUsd, POT_LABEL[r.potential || "unset"], r.contacted ? "Sí" : "No", r.notes, r.website, r.email, r.phone, r.sourceUrl, r.affinityScore]); downloadCsv([h, ...rows], "repositorio_proveedores_tipat.csv"); }
+  function exportRepoCSV() { const h = ["Empresa", "País", "Ciudad", "Lat", "Lng", "Puerto", "Puerto cercano", "Productos", "Certificaciones", "Origen TIPAT", "Cert. origen", "FOB USD", "Potencial", "Contactado", "Notas", "Web", "Email", "Telefono", "Fuente", "Score"]; const rows = repo.map((r) => { const np = supplierNearestPort(r); return [r.company, r.country, r.city, r.lat ?? "", r.lng ?? "", r.nearestPort, np ? np.port.name : "", (r.products || []).join("; "), (r.certifications || []).join("; "), r.cptppOrigin, certMechanismFor(r.country) || "", r.indicativeFobUsd, POT_LABEL[r.potential || "unset"], r.contacted ? "Sí" : "No", r.notes, r.website, r.email, r.phone, r.sourceUrl, r.affinityScore]; }); downloadCsv([h, ...rows], "repositorio_proveedores_tipat.csv"); }
   function exportCompCSV(src) { const h = ["Empresa", "Segmento", "Tier", "Fuerza", "Tamaño", "Alcance", "Integración", "Catálogo", "Web", "Comercial", "Estado", "Ciudad", `Dist. a ${plantState} (km)`, "Telefono", "Productos", "Precio ref.", "Notas", "Sitio", "Email", "Fuente"]; const rows = src.map((c) => { const cs = hasScores(c) ? compositeScore(c) : ""; const d = compDistanceKm(c); return [c.company, segmentStyle(c.segment).label, hasScores(c) ? tierOf(compositeScore(c)).key : "", cs, clamp100(c.scaleSize), clamp100(c.geoReach), verticalScore(c.segment), clamp100(c.catalogBreadth), clamp100(c.webQuality), clamp100(c.commercialSoph), c.state, c.city, d != null ? Math.round(d) : "", c.phone, (c.products || []).join("; "), c.priceNote, c.userNotes || c.note || "", c.website, c.email, c.sourceUrl]; }); downloadCsv([h, ...rows], "competencia_mx_scoring.csv"); }
 
   let displayed = [...suppliers];

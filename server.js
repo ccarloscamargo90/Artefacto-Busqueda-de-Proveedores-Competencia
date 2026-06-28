@@ -1,24 +1,76 @@
 // Servidor de producción para Render (u otro host de servidor persistente).
 // Sirve el frontend compilado (dist/) y expone /api/anthropic como proxy que
 // inyecta la API key desde la variable de entorno ANTHROPIC_API_KEY.
-// Así la clave vive en el servidor y nunca llega al navegador.
+// Endurecido contra abuso del proxy: allowlist de modelo, tope de max_tokens,
+// rate limit por IP y autenticación opcional (HTTP Basic) si defines APP_PASSWORD.
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.set("trust proxy", 1); // Render va detrás de un proxy: usar la IP real (X-Forwarded-For)
+
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY;
+const APP_PASSWORD = process.env.APP_PASSWORD;        // si se define, exige login en toda la app
+const APP_USER = process.env.APP_USER || "equipo";    // usuario para el login (opcional)
+const ALLOWED_MODELS = ["claude-sonnet-4-6"];         // modelos permitidos vía el proxy
+const MAX_TOKENS_CAP = 8000;                          // tope de tokens de salida por request
 
-// Proxy a la API de Anthropic
-app.post("/api/anthropic", express.json({ limit: "4mb" }), async (req, res) => {
+// Cabeceras básicas de seguridad
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  next();
+});
+
+// Autenticación opcional (HTTP Basic): si APP_PASSWORD está definida, protege TODO
+// (la app y el proxy). El navegador pedirá usuario/contraseña una vez.
+function safeEq(a, b) {
+  const ba = Buffer.from(String(a)), bb = Buffer.from(String(b));
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+if (APP_PASSWORD) {
+  app.use((req, res, next) => {
+    const m = (req.headers.authorization || "").match(/^Basic (.+)$/);
+    if (m) {
+      const idx = Buffer.from(m[1], "base64").toString().indexOf(":");
+      const u = Buffer.from(m[1], "base64").toString().slice(0, idx);
+      const p = Buffer.from(m[1], "base64").toString().slice(idx + 1);
+      if (safeEq(u, APP_USER) && safeEq(p, APP_PASSWORD)) return next();
+    }
+    res.setHeader("WWW-Authenticate", 'Basic realm="Supplier Scout"');
+    return res.status(401).send("Autenticación requerida.");
+  });
+}
+
+// Rate limit simple en memoria, por IP, para el proxy
+const WINDOW_MS = 10 * 60 * 1000;
+const MAX_HITS = 40;
+const hits = new Map();
+function rateLimited(ip) {
+  const now = Date.now();
+  const rec = hits.get(ip);
+  if (!rec || now > rec.reset) { hits.set(ip, { count: 1, reset: now + WINDOW_MS }); return false; }
+  rec.count++;
+  return rec.count > MAX_HITS;
+}
+
+// Proxy a la API de Anthropic (con allowlist de modelo y tope de max_tokens)
+app.post("/api/anthropic", express.json({ limit: "1mb" }), async (req, res) => {
   if (!API_KEY) {
-    return res.status(500).json({
-      type: "error",
-      error: { message: "Falta ANTHROPIC_API_KEY en las variables de entorno del servidor." },
-    });
+    return res.status(500).json({ type: "error", error: { message: "Falta ANTHROPIC_API_KEY en las variables de entorno del servidor." } });
   }
+  if (rateLimited(req.ip)) {
+    return res.status(429).json({ type: "error", error: { message: "Demasiadas solicitudes. Espera unos minutos." } });
+  }
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  if (!ALLOWED_MODELS.includes(body.model)) body.model = ALLOWED_MODELS[0];
+  const mt = Number(body.max_tokens);
+  body.max_tokens = !Number.isFinite(mt) || mt <= 0 ? MAX_TOKENS_CAP : Math.min(mt, MAX_TOKENS_CAP);
   try {
     const upstream = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -27,15 +79,13 @@ app.post("/api/anthropic", express.json({ limit: "4mb" }), async (req, res) => {
         "x-api-key": API_KEY,
         "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(body),
     });
     const text = await upstream.text();
     res.status(upstream.status).type("application/json").send(text);
   } catch (e) {
-    res.status(502).json({
-      type: "error",
-      error: { message: "No se pudo contactar la API de Anthropic: " + String(e) },
-    });
+    console.error("Proxy error:", e);
+    res.status(502).json({ type: "error", error: { message: "No se pudo contactar la API de Anthropic." } });
   }
 });
 

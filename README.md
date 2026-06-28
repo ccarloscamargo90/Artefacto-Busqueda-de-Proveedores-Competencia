@@ -103,6 +103,21 @@ frontend compilado y expone `/api/anthropic`, y un blueprint (`render.yaml`).
    **Start command:** `npm start`.
 3. En **Environment** agrega la variable `ANTHROPIC_API_KEY` con tu clave. Deploy.
 
+### 🔒 Protégela con contraseña (muy recomendado)
+
+El proxy `/api/anthropic` usa **tu** API key. Si la URL queda pública y sin protección,
+cualquiera que la descubra podría usarla y **gastar tu saldo de Anthropic**. Para evitarlo,
+define en Render la variable de entorno **`APP_PASSWORD`** (y opcionalmente `APP_USER`):
+
+1. En tu servicio de Render → **Environment** → **Add Environment Variable**.
+2. `APP_PASSWORD` = una contraseña fuerte (y, si quieres, `APP_USER` = un usuario).
+3. Guarda → Render redepliega. A partir de ahí, el navegador pedirá usuario/contraseña
+   **una vez** para entrar a la app (y eso protege también el proxy).
+
+Si no defines `APP_PASSWORD`, la app queda **abierta** (cómodo para probar, pero no para
+dejarla pública). El servidor además ya limita el abuso aunque esté abierta: solo permite el
+modelo `claude-sonnet-4-6`, topa `max_tokens` y aplica un rate-limit por IP.
+
 Notas:
 - El plan **gratis** de Render "duerme" tras inactividad (el primer acceso tarda en
   despertar). El plan de pago (~$7/mes) lo deja siempre activo.
