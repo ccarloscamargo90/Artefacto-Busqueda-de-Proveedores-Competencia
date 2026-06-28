@@ -7,6 +7,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
+    // Marca el build como self-hosteado para que el componente use el proxy /api/anthropic.
+    define: { __SELF_HOSTED__: "true" },
     plugins: [
       react(),
       {

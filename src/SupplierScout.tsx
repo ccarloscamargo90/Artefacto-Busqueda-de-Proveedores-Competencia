@@ -234,9 +234,10 @@ function robustParse(text, arrKey) {
   try { const end = s.lastIndexOf("}"); if (end !== -1) return JSON.parse(s.slice(0, end + 1)); } catch (_) {}
   return recoverArray(s, arrKey);
 }
-// En localhost (npm run dev) la llamada pasa por el proxy de Vite que inyecta la API key (ver vite.config.ts).
-// Dentro del artefacto de Claude.ai (cualquier otro host) se llama directo, sin key, como antes.
-const ANTHROPIC_API_URL = (typeof window !== "undefined" && window.location && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) ? "/api/anthropic" : "https://api.anthropic.com/v1/messages";
+// En la app self-hosteada (local con Vite, o en Render/Vercel/etc.) __SELF_HOSTED__ se define en build
+// y la llamada pasa por el proxy /api/anthropic, que inyecta la API key desde el servidor.
+// Dentro del artefacto de Claude.ai esa bandera no existe, así que se llama directo, sin key, como antes.
+const ANTHROPIC_API_URL = (typeof __SELF_HOSTED__ !== "undefined" && __SELF_HOSTED__) ? "/api/anthropic" : "https://api.anthropic.com/v1/messages";
 async function callClaude(systemPrompt, userPrompt, arrKey, maxTokens = 4000) {
   const res = await fetch(ANTHROPIC_API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], tools: [{ type: "web_search_20250305", name: "web_search" }] }) });
   let data; try { data = await res.json(); } catch (_) { throw new Error(`La API respondió ${res.status} y no se pudo leer. Reintenta.`); }

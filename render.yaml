@@ -1,0 +1,16 @@
+# Blueprint de Render. Con esto puedes desplegar en un clic desde el dashboard
+# (New + → Blueprint → seleccionar este repo). Render te pedirá el valor de
+# ANTHROPIC_API_KEY (no se guarda en el repo).
+services:
+  - type: web
+    name: supplier-scout-tipat
+    runtime: node
+    plan: free
+    # --include=dev fuerza instalar Vite/Tailwind (devDependencies) para el build.
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NODE_VERSION
+        value: "20"
