@@ -16,11 +16,23 @@ Componente React (`src/SupplierScout.tsx`) con tres módulos en pestañas:
    (saco PP tejido, big bag/FIBC, tela PP, resina PP), con búsqueda web en tiempo real,
    filtros por país/specs/MOQ/certificaciones, y comparación contra un *benchmark*
    (tu proveedor actual): deltas de precio, origen y logística.
+   - **Mapa mundial** (vista Lista/Mapa): ubica a cada proveedor sobre el mapa,
+     coloreado por país y dimensionado por score.
+   - **Puerto más cercano**: para cada proveedor se calcula el puerto de exportación
+     más cercano (base curada de puertos del bloque TIPAT) con su distancia en km;
+     en el mapa se dibuja una línea al puerto. Se incluye en la tarjeta y en el CSV.
 2. **Repositorio** — guarda proveedores, marca potencial/contactado, añade notas y
-   exporta a CSV. Persiste en el almacenamiento del artefacto.
+   exporta a CSV (con puerto cercano, distancia y coordenadas). Persiste en el
+   almacenamiento del artefacto.
 3. **Competencia MX** — busca y evalúa competidores mexicanos con un *Índice de Fuerza
    Competitiva* (tamaño, alcance, integración, catálogo, web, sofisticación), los clasifica
    en Tiers A/B/C, los muestra en lista o sobre un mapa de México y exporta a CSV.
+   - **Más resultados y teléfonos**: hasta 8 empresas por búsqueda, con prioridad
+     máxima en extraer el teléfono de contacto.
+   - **Distancias a tu planta**: eliges tu estado/planta y se calcula la distancia de
+     cada competidor; el mapa marca tu planta con anillos de 250/500/1000 km.
+   - **Filtros y exportación**: filtro "solo con teléfono" + tier/segmento/estado, y
+     CSV con la columna de distancia a tu planta.
 
 ## ⚠️ Importante: tus datos guardados NO están en este código
 

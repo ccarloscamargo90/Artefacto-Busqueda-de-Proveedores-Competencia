@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Package, MapPin, Globe, Mail, Phone, ExternalLink, Download, Check, Loader2, AlertTriangle, Anchor, ShieldCheck, Building2, ChevronDown, Factory, Target, TrendingDown, TrendingUp, RotateCw, FileBadge, Bookmark, BookmarkCheck, Trash2, Database, Inbox, Swords, Tag, Map, List, Gauge } from "lucide-react";
+import { Search, Package, MapPin, Globe, Mail, Phone, ExternalLink, Download, Check, Loader2, AlertTriangle, Anchor, ShieldCheck, Building2, ChevronDown, Factory, Target, TrendingDown, TrendingUp, RotateCw, FileBadge, Bookmark, BookmarkCheck, Trash2, Database, Inbox, Swords, Tag, Map, List, Gauge, Navigation, Crosshair } from "lucide-react";
 
 const PRODUCT_TYPES = [
   { id: "saco_pp", label: "Saco PP tejido", query: "polypropylene woven bags / PP sacks manufacturer" },
@@ -62,6 +62,81 @@ const SEG_COLORS = [
 const MX_MAINLAND = [[32.62, -114.72], [31.33, -111.07], [31.78, -106.48], [29.30, -100.90], [27.50, -99.51], [25.84, -97.50], [22.27, -97.86], [19.20, -96.14], [18.15, -94.43], [18.65, -91.80], [19.85, -90.53], [21.30, -89.66], [21.62, -87.08], [19.60, -87.45], [18.51, -88.30], [17.82, -89.14], [16.07, -90.44], [14.54, -92.23], [15.86, -95.20], [16.86, -99.89], [17.96, -102.20], [19.06, -104.32], [20.62, -105.23], [23.19, -106.42], [25.79, -109.04], [27.92, -110.90], [31.30, -113.55]];
 const MX_BAJA = [[32.53, -117.12], [31.86, -116.62], [29.95, -115.80], [27.50, -114.50], [24.50, -111.80], [22.89, -109.92], [24.16, -110.31], [25.50, -111.10], [28.00, -112.90], [30.50, -114.20], [31.80, -114.80]];
 
+// Puertos de exportación relevantes en los países del TIPAT/CPTPP (para "puerto más cercano")
+const PORTS = [
+  { name: "Haiphong", country: "Vietnam", lat: 20.86, lng: 106.68 },
+  { name: "Cat Lai (HCMC)", country: "Vietnam", lat: 10.76, lng: 106.79 },
+  { name: "Cai Mep", country: "Vietnam", lat: 10.52, lng: 107.02 },
+  { name: "Da Nang", country: "Vietnam", lat: 16.07, lng: 108.22 },
+  { name: "Port Klang", country: "Malasia", lat: 3.00, lng: 101.39 },
+  { name: "Tanjung Pelepas", country: "Malasia", lat: 1.36, lng: 103.55 },
+  { name: "Penang", country: "Malasia", lat: 5.41, lng: 100.34 },
+  { name: "Singapur", country: "Singapur", lat: 1.26, lng: 103.83 },
+  { name: "Tokio", country: "Japón", lat: 35.62, lng: 139.78 },
+  { name: "Yokohama", country: "Japón", lat: 35.45, lng: 139.66 },
+  { name: "Kobe", country: "Japón", lat: 34.68, lng: 135.21 },
+  { name: "Nagoya", country: "Japón", lat: 35.05, lng: 136.86 },
+  { name: "Sídney", country: "Australia", lat: -33.85, lng: 151.21 },
+  { name: "Melbourne", country: "Australia", lat: -37.84, lng: 144.92 },
+  { name: "Brisbane", country: "Australia", lat: -27.38, lng: 153.17 },
+  { name: "Fremantle", country: "Australia", lat: -32.05, lng: 115.74 },
+  { name: "Auckland", country: "Nueva Zelanda", lat: -36.84, lng: 174.77 },
+  { name: "Tauranga", country: "Nueva Zelanda", lat: -37.64, lng: 176.18 },
+  { name: "Lyttelton", country: "Nueva Zelanda", lat: -43.60, lng: 172.72 },
+  { name: "Vancouver", country: "Canadá", lat: 49.29, lng: -123.11 },
+  { name: "Prince Rupert", country: "Canadá", lat: 54.31, lng: -130.32 },
+  { name: "Montreal", country: "Canadá", lat: 45.50, lng: -73.55 },
+  { name: "Halifax", country: "Canadá", lat: 44.65, lng: -63.57 },
+  { name: "Manzanillo", country: "México", lat: 19.05, lng: -104.31 },
+  { name: "Lázaro Cárdenas", country: "México", lat: 17.96, lng: -102.17 },
+  { name: "Veracruz", country: "México", lat: 19.20, lng: -96.13 },
+  { name: "Altamira", country: "México", lat: 22.50, lng: -97.91 },
+  { name: "Ensenada", country: "México", lat: 31.85, lng: -116.62 },
+  { name: "Callao", country: "Perú", lat: -12.05, lng: -77.14 },
+  { name: "Paita", country: "Perú", lat: -5.09, lng: -81.11 },
+  { name: "San Antonio", country: "Chile", lat: -33.59, lng: -71.61 },
+  { name: "Valparaíso", country: "Chile", lat: -33.04, lng: -71.63 },
+  { name: "San Vicente", country: "Chile", lat: -36.73, lng: -73.12 },
+  { name: "Felixstowe", country: "Reino Unido", lat: 51.96, lng: 1.33 },
+  { name: "Southampton", country: "Reino Unido", lat: 50.90, lng: -1.40 },
+  { name: "London Gateway", country: "Reino Unido", lat: 51.51, lng: 0.43 },
+  { name: "Muara", country: "Brunéi", lat: 5.02, lng: 115.07 },
+];
+const COUNTRY_META = {
+  vietnam: { label: "Vietnam", lat: 16.2, lng: 107.9, color: "#ef4444" },
+  malaysia: { label: "Malasia", lat: 3.6, lng: 101.9, color: "#f59e0b" },
+  mexico: { label: "México", lat: 23.6, lng: -102.5, color: "#10b981" },
+  peru: { label: "Perú", lat: -9.2, lng: -75.0, color: "#06b6d4" },
+  chile: { label: "Chile", lat: -35.0, lng: -71.0, color: "#3b82f6" },
+  japan: { label: "Japón", lat: 36.5, lng: 138.2, color: "#a855f7" },
+  singapore: { label: "Singapur", lat: 1.35, lng: 103.8, color: "#ec4899" },
+  australia: { label: "Australia", lat: -25.3, lng: 133.8, color: "#eab308" },
+  newzealand: { label: "N. Zelanda", lat: -41.5, lng: 172.5, color: "#14b8a6" },
+  canada: { label: "Canadá", lat: 58.0, lng: -106.0, color: "#f97316" },
+  uk: { label: "Reino Unido", lat: 54.0, lng: -2.5, color: "#8b5cf6" },
+  brunei: { label: "Brunéi", lat: 4.5, lng: 114.7, color: "#84cc16" },
+};
+// Contornos simplificados de continentes (lat,lng) para el mapa mundial — referencia visual aproximada
+const WORLD_LAND = [
+  [[70,-141],[69,-128],[71,-117],[68,-95],[70,-85],[64,-78],[60,-94],[57,-92],[51,-80],[55,-79],[62,-78],[58,-68],[53,-79],[49,-67],[45,-60],[43,-66],[40,-74],[35,-76],[30,-81],[25,-80],[28,-83],[30,-88],[29,-95],[26,-97],[21,-97],[18,-94],[16,-95],[20,-106],[23,-110],[27,-114],[31,-117],[34,-120],[40,-124],[46,-124],[49,-125],[54,-130],[58,-137],[60,-141]],
+  [[12,-71],[11,-64],[8,-60],[5,-52],[0,-50],[-2,-44],[-8,-35],[-13,-38],[-18,-39],[-23,-41],[-27,-48],[-33,-53],[-38,-58],[-41,-63],[-46,-67],[-50,-69],[-53,-68],[-55,-66],[-54,-72],[-48,-75],[-42,-74],[-37,-73],[-30,-71],[-23,-70],[-18,-70],[-14,-76],[-6,-81],[-2,-80],[2,-78],[7,-77],[9,-76],[11,-72]],
+  [[37,-6],[37,10],[33,11],[31,20],[31,25],[30,32],[22,37],[12,43],[11,51],[2,46],[-5,40],[-15,40],[-22,35],[-26,33],[-34,26],[-34,18],[-29,16],[-22,14],[-15,12],[-6,12],[0,9],[4,9],[5,-2],[5,-8],[10,-15],[15,-17],[21,-17],[28,-13],[33,-9],[36,-6]],
+  [[71,28],[70,20],[63,5],[58,5],[57,8],[54,8],[53,4],[51,3],[49,-2],[48,-5],[46,-2],[43,-2],[43,-9],[40,-9],[37,-9],[36,-6],[38,-1],[41,3],[43,7],[44,10],[40,18],[42,19],[40,24],[41,28],[45,29],[46,31],[47,38],[50,40],[60,40],[66,33],[69,30]],
+  [[58,-5],[57,-2],[56,-3],[55,-1],[54,0],[52,2],[51,1],[51,-1],[50,-5],[51,-5],[53,-5],[54,-4],[55,-5],[56,-6]],
+  [[66,33],[73,75],[75,105],[70,135],[66,178],[60,165],[55,160],[50,158],[55,140],[50,142],[45,135],[40,128],[35,126],[34,122],[31,122],[30,121],[25,119],[22,114],[20,109],[16,108],[10,106],[9,104],[8,100],[6,100],[2,103],[6,98],[10,98],[14,98],[16,94],[21,92],[22,89],[20,86],[15,80],[10,80],[8,77],[12,75],[19,73],[23,68],[25,66],[27,57],[26,53],[30,48],[37,49],[42,48],[40,41],[44,35],[48,40],[55,40],[60,40]],
+  [[45,142],[43,145],[41,141],[38,141],[35,140],[34,136],[33,132],[31,130],[33,129],[35,133],[36,137],[38,138],[41,140],[43,141]],
+  [[-11,142],[-14,145],[-18,146],[-24,153],[-28,153],[-34,151],[-38,147],[-39,144],[-38,140],[-35,137],[-32,134],[-34,123],[-35,118],[-33,115],[-28,114],[-22,114],[-18,122],[-15,125],[-14,130],[-12,131],[-11,136],[-13,141]],
+  [[-34,173],[-37,175],[-39,177],[-41,175],[-39,174],[-37,174],[-35,173]],
+  [[-40,172],[-43,173],[-46,170],[-46,167],[-44,168],[-41,171]],
+  [[7,117],[4,118],[1,118],[-2,116],[-4,114],[-3,110],[1,109],[4,109]],
+  [[6,95],[3,98],[-1,101],[-5,104],[-6,105],[-3,101],[0,98],[4,96]],
+];
+function haversineKm(lat1, lng1, lat2, lng2) { const R = 6371; const dLat = (lat2 - lat1) * Math.PI / 180; const dLng = (lng2 - lng1) * Math.PI / 180; const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.min(1, Math.sqrt(a))); }
+function countryKey(c) { const n = norm(c); if (!n) return null; if (n.includes("vietnam")) return "vietnam"; if (n.includes("malasia") || n.includes("malaysia")) return "malaysia"; if (n.includes("mexico")) return "mexico"; if (n.includes("peru")) return "peru"; if (n.includes("chile")) return "chile"; if (n.includes("japon") || n.includes("japan")) return "japan"; if (n.includes("singap")) return "singapore"; if (n.includes("australia")) return "australia"; if (n.includes("zeland") || n.includes("zelanda")) return "newzealand"; if (n.includes("canad")) return "canada"; if (n.includes("reino unido") || n.includes("united kingdom") || n === "uk" || n.includes("britain") || n.includes("ingla")) return "uk"; if (n.includes("brunei")) return "brunei"; return null; }
+function getSupplierCoords(s) { const la = num(s.lat), ln = num(s.lng); if (la !== null && ln !== null && !(la === 0 && ln === 0) && la >= -60 && la <= 75 && ln >= -180 && ln <= 180) return { lat: la, lng: ln, approx: false }; const k = countryKey(s.country); if (k && COUNTRY_META[k]) return { lat: COUNTRY_META[k].lat, lng: COUNTRY_META[k].lng, approx: true }; return null; }
+function nearestPortOf(lat, lng) { let best = null; for (const p of PORTS) { const d = haversineKm(lat, lng, p.lat, p.lng); if (!best || d < best.dist) best = { port: p, dist: d }; } return best; }
+function supplierNearestPort(s) { const co = getSupplierCoords(s); if (!co) return null; const np = nearestPortOf(co.lat, co.lng); return np ? { ...np, approx: co.approx } : null; }
+
 const SYSTEM_PROMPT = `Eres un investigador de abastecimiento (sourcing) industrial especializado en proveedores de los países miembros del TIPAT/CPTPP. Encuentras FABRICANTES REALES y verificables usando la herramienta de búsqueda web.
 
 REGLA ABSOLUTA ANTI-ALUCINACIÓN:
@@ -72,13 +147,14 @@ REGLA ABSOLUTA ANTI-ALUCINACIÓN:
 - indicativeFobUsd: precio FOB por unidad en USD SOLO si aparece en fuente pública. Si no, "no disponible". Jamás estimes precios.
 
 country: país del fabricante; DEBE ser uno de los 12 miembros del TIPAT/CPTPP (${ALL_TIPAT}).
+lat, lng: coordenadas decimales aproximadas de la fábrica o ciudad del fabricante (lng negativo en América; p.ej. Haiphong lat 20.86 lng 106.68). Si no las sabes con certeza, usa las de la ciudad o el país. Si aun así no, 0.
 cptppOrigin: "sí" si hay indicio de exportación bajo preferencia CPTPP o elegibilidad de origen CPTPP; "no" si no; "desconocido" si no hay info.
 affinityScore entero (0-100) según coincidencia con: producto, país, specs, MOQ y certificaciones.
 
-IMPORTANTE: Responde un JSON CORTO. Máximo 6 proveedores. Solo el objeto JSON, sin markdown. Estructura:
-{"suppliers":[{"company":"","country":"","city":"","province":"","nearestPort":"","products":[""],"estimatedCapacity":"","certifications":[""],"cptppOrigin":"","indicativeFobUsd":"","website":"","email":"","phone":"","sourceUrl":"","affinityScore":0,"scoreRationale":""}],"searchSummary":""}
+IMPORTANTE: Responde un JSON CORTO. Máximo 8 proveedores. Solo el objeto JSON, sin markdown. Estructura:
+{"suppliers":[{"company":"","country":"","city":"","province":"","lat":0,"lng":0,"nearestPort":"","products":[""],"estimatedCapacity":"","certifications":[""],"cptppOrigin":"","indicativeFobUsd":"","website":"","email":"","phone":"","sourceUrl":"","affinityScore":0,"scoreRationale":""}],"searchSummary":""}
 
-Devuelve hasta 6 proveedores reales. Si país específico, todos de ese país. Si "todos", prioriza variedad y hubs de PP (Vietnam, Malasia, México). Sé conciso.`;
+Devuelve hasta 8 proveedores reales. Si país específico, todos de ese país. Si "todos", prioriza variedad y hubs de PP (Vietnam, Malasia, México). Sé conciso.`;
 
 const COMP_SYSTEM_PROMPT = `Eres un analista de inteligencia competitiva del mercado MEXICANO de costales y sacos de polipropileno (PP). Encuentras y EVALÚAS empresas mexicanas reales que compiten en ese mercado, usando la herramienta de búsqueda web.
 
@@ -86,7 +162,7 @@ REGLA ABSOLUTA ANTI-ALUCINACIÓN:
 - Solo incluye una empresa si hay evidencia web real con URL verificable.
 - NUNCA inventes empresas, teléfonos, contactos, precios, coordenadas ni URLs.
 - Si un dato no aparece, escribe "no disponible". No supongas.
-- Cada empresa DEBE tener sourceUrl con URL real. Prioriza EXTRAER el TELÉFONO.
+- Cada empresa DEBE tener sourceUrl con URL real. PRIORIDAD MÁXIMA: EXTRAER EL TELÉFONO de contacto (busca en su sitio, directorios, Google Maps, redes). Devuelve el teléfono en formato local con lada.
 - priceNote: precio público por costal/saco SOLO si aparece en fuente. Si no, "no disponible".
 
 segment: "fabricante", "importador", "distribuidor" o "comercializador". state: estado de México. city: ciudad.
@@ -100,10 +176,10 @@ EVALUACIÓN — califica cada dimensión de 0 a 100 con base en la EVIDENCIA WEB
 - commercialSoph: sofisticación comercial (tienda en línea, cotización web, marketplaces, redes).
 scoreNote: 1 frase justificando la evaluación.
 
-IMPORTANTE: JSON CORTO. Máximo 5 empresas. Solo el objeto JSON, sin markdown. Estructura:
+IMPORTANTE: JSON CORTO. Máximo 8 empresas. Solo el objeto JSON, sin markdown. Estructura:
 {"competitors":[{"company":"","segment":"","state":"","city":"","lat":0,"lng":0,"phone":"","website":"","email":"","products":[""],"priceNote":"","scaleSize":0,"webQuality":0,"catalogBreadth":0,"geoReach":0,"commercialSoph":0,"scoreNote":"","sourceUrl":"","note":""}],"searchSummary":""}
 
-Devuelve hasta 5 empresas mexicanas reales. Evalúa con honestidad sobre evidencia. Sé conciso.`;
+Devuelve hasta 8 empresas mexicanas reales. Evalúa con honestidad sobre evidencia. Sé conciso.`;
 
 function scoreColor(s) { const n = Number(s) || 0; if (n >= 80) return "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"; if (n >= 60) return "bg-amber-500/15 text-amber-300 border-amber-500/30"; return "bg-neutral-500/15 text-neutral-300 border-neutral-600/40"; }
 function originStyle(v) { const val = (v || "").toString().toLowerCase(); if (val.startsWith("s") || val === "yes") return { label: "Elegible TIPAT", icon: true, cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" }; if (val.startsWith("n") || val === "no") return { label: "Sin preferencia TIPAT", icon: false, cls: "bg-red-500/15 text-red-300 border-red-500/30" }; return { label: "TIPAT por confirmar", icon: false, cls: "bg-neutral-700/40 text-neutral-400 border-neutral-600/40" }; }
@@ -158,8 +234,8 @@ function robustParse(text, arrKey) {
   try { const end = s.lastIndexOf("}"); if (end !== -1) return JSON.parse(s.slice(0, end + 1)); } catch (_) {}
   return recoverArray(s, arrKey);
 }
-async function callClaude(systemPrompt, userPrompt, arrKey) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], tools: [{ type: "web_search_20250305", name: "web_search" }] }) });
+async function callClaude(systemPrompt, userPrompt, arrKey, maxTokens = 4000) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], tools: [{ type: "web_search_20250305", name: "web_search" }] }) });
   let data; try { data = await res.json(); } catch (_) { throw new Error(`La API respondió ${res.status} y no se pudo leer. Reintenta.`); }
   if (data && (data.type === "error" || data.error)) throw new Error(data.error?.message || "La API devolvió un error. Reintenta.");
   if (!data || !Array.isArray(data.content)) throw new Error("Respuesta inesperada de la API. Reintenta.");
@@ -176,7 +252,7 @@ function downloadCsv(rows, name) {
   const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url);
 }
 
-function MexicoMap({ competitors }) {
+function MexicoMap({ competitors, plant }) {
   const LNG_MIN = -118.5, LNG_MAX = -86.0, LAT_MIN = 14.0, LAT_MAX = 33.0;
   const COSF = Math.cos((23.5 * Math.PI) / 180);
   const W = 820, pad = 26;
@@ -189,20 +265,64 @@ function MexicoMap({ competitors }) {
     let lat = co.lat, lng = co.lng;
     if (co.approx) { lat += jitter(c.id, 0.6); lng += jitter(c.id + "x", 0.6); }
     const sg = SEG_COLORS.find((x) => x.key === segKey(c.segment)) || SEG_COLORS[4];
-    return { c, p: project(lat, lng), color: sg.color, label: sg.label, r: hasScores(c) ? 4 + (compositeScore(c) / 100) * 9 : 5, big: hasScores(c) && compositeScore(c) >= 70 };
+    const dist = plant ? haversineKm(co.lat, co.lng, plant.lat, plant.lng) : null;
+    return { c, p: project(lat, lng), color: sg.color, label: sg.label, dist, r: hasScores(c) ? 4 + (compositeScore(c) / 100) * 9 : 5, big: hasScores(c) && compositeScore(c) >= 70 };
   }).filter(Boolean);
+  const pj = plant ? project(plant.lat, plant.lng) : null;
+  const ringPx = (km) => (km / 111) * s;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ display: "block" }}>
       <rect x="0" y="0" width={W} height={H} fill="#0a0a0a" />
       <path d={toPath(MX_MAINLAND)} fill="#1f1f1f" stroke="#525252" strokeWidth="1.2" strokeLinejoin="round" />
       <path d={toPath(MX_BAJA)} fill="#1f1f1f" stroke="#525252" strokeWidth="1.2" strokeLinejoin="round" />
-      {placed.map(({ c, p, color, label, r }) => (
+      {pj && [250, 500, 1000].map((km) => (<circle key={"ring" + km} cx={pj[0]} cy={pj[1]} r={ringPx(km)} fill="none" stroke="#ef4444" strokeOpacity="0.16" strokeWidth="1" strokeDasharray="3 3" />))}
+      {placed.map(({ c, p, color, label, r, dist }) => (
         <circle key={c.id} cx={p[0]} cy={p[1]} r={r} fill={color} fillOpacity="0.85" stroke="#0a0a0a" strokeWidth="1.2">
-          <title>{`${c.company} — ${label}${!isEmpty(c.state) ? " · " + c.state : ""}${hasScores(c) ? " · Fuerza " + compositeScore(c) : ""}${!isEmpty(c.phone) ? " · " + c.phone : ""}`}</title>
+          <title>{`${c.company} — ${label}${!isEmpty(c.state) ? " · " + c.state : ""}${hasScores(c) ? " · Fuerza " + compositeScore(c) : ""}${dist != null ? " · ~" + Math.round(dist) + " km" : ""}${!isEmpty(c.phone) ? " · " + c.phone : ""}`}</title>
         </circle>
       ))}
       {placed.filter((x) => x.big).map(({ c, p, r }) => (
         <text key={c.id + "_l"} x={p[0] + r + 3} y={p[1] + 3.5} fontSize="10" fill="#e5e5e5" stroke="#0a0a0a" strokeWidth="0.6" paintOrder="stroke">{c.company.length > 16 ? c.company.slice(0, 15) + "…" : c.company}</text>
+      ))}
+      {pj && (<g><circle cx={pj[0]} cy={pj[1]} r="6" fill="#ef4444" stroke="#0a0a0a" strokeWidth="1.5" /><circle cx={pj[0]} cy={pj[1]} r="2" fill="#fff" /><text x={pj[0]} y={pj[1] - 9} fontSize="10" fill="#fca5a5" textAnchor="middle" stroke="#0a0a0a" strokeWidth="0.6" paintOrder="stroke">Tu planta</text></g>)}
+    </svg>
+  );
+}
+
+function WorldMap({ suppliers }) {
+  const LNG_MIN = -140, LNG_MAX = 180, LAT_MIN = -50, LAT_MAX = 72;
+  const W = 900, pad = 16;
+  const sc = (W - 2 * pad) / (LNG_MAX - LNG_MIN);
+  const H = Math.round((LAT_MAX - LAT_MIN) * sc + 2 * pad);
+  const project = (lat, lng) => [pad + (lng - LNG_MIN) * sc, pad + (LAT_MAX - lat) * sc];
+  const toPath = (pts) => pts.map((p, i) => { const [x, y] = project(p[0], p[1]); return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`; }).join(" ") + " Z";
+  const placed = suppliers.map((sup) => {
+    const co = getSupplierCoords(sup); if (!co) return null;
+    const k = countryKey(sup.country); const meta = k ? COUNTRY_META[k] : null;
+    const np = nearestPortOf(co.lat, co.lng);
+    const score = Number(sup.affinityScore) || 0;
+    return { sup, p: project(co.lat, co.lng), portP: np ? project(np.port.lat, np.port.lng) : null, np, color: meta ? meta.color : "#a3a3a3", r: 4.5 + (score / 100) * 7, approx: co.approx, score };
+  }).filter(Boolean);
+  const vlines = []; for (let lng = -120; lng <= 180; lng += 30) vlines.push(lng);
+  const hlines = []; for (let lat = -40; lat <= 60; lat += 20) hlines.push(lat);
+  const eq = project(0, 0);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ display: "block" }}>
+      <rect x="0" y="0" width={W} height={H} fill="#0a0a0a" />
+      {vlines.map((lng) => { const [x] = project(0, lng); return <line key={"v" + lng} x1={x} y1={pad} x2={x} y2={H - pad} stroke="#171717" strokeWidth="1" />; })}
+      {hlines.map((lat) => { const [, y] = project(lat, 0); return <line key={"h" + lat} x1={pad} y1={y} x2={W - pad} y2={y} stroke="#171717" strokeWidth="1" />; })}
+      <line x1={pad} y1={eq[1]} x2={W - pad} y2={eq[1]} stroke="#262626" strokeWidth="1" strokeDasharray="4 4" />
+      {WORLD_LAND.map((poly, i) => (<path key={"land" + i} d={toPath(poly)} fill="#161616" stroke="#3f3f3f" strokeWidth="0.7" strokeLinejoin="round" />))}
+      {Object.values(COUNTRY_META).map((m) => { const [x, y] = project(m.lat, m.lng); return <text key={m.label} x={x} y={y} fontSize="8.5" fill="#525252" textAnchor="middle">{m.label}</text>; })}
+      {PORTS.map((p, i) => { const [x, y] = project(p.lat, p.lng); return (<rect key={"port" + i} x={x - 2} y={y - 2} width="4" height="4" fill="#0ea5e9" fillOpacity="0.55" transform={`rotate(45 ${x} ${y})`}><title>{`Puerto: ${p.name} (${p.country})`}</title></rect>); })}
+      {placed.map(({ p, portP }, i) => portP ? <line key={"cn" + i} x1={p[0]} y1={p[1]} x2={portP[0]} y2={portP[1]} stroke="#ef4444" strokeOpacity="0.25" strokeWidth="1" /> : null)}
+      {placed.map(({ sup, p, color, r, np, approx, score }, i) => (
+        <circle key={"sp" + i} cx={p[0]} cy={p[1]} r={r} fill={color} fillOpacity="0.9" stroke="#0a0a0a" strokeWidth="1.2">
+          <title>{`${sup.company} — ${sup.country || "país n/d"}${approx ? " (ubic. aprox.)" : ""} · Score ${score}${np ? `\nPuerto cercano: ${np.port.name} (~${Math.round(np.dist)} km)` : ""}${!isEmpty(sup.phone) ? `\nTel: ${sup.phone}` : ""}`}</title>
+        </circle>
+      ))}
+      {placed.filter((x) => x.score >= 80).map(({ sup, p, r }, i) => (
+        <text key={"spl" + i} x={p[0] + r + 2} y={p[1] + 3} fontSize="9" fill="#e5e5e5" stroke="#0a0a0a" strokeWidth="0.5" paintOrder="stroke">{sup.company.length > 18 ? sup.company.slice(0, 17) + "…" : sup.company}</text>
       ))}
     </svg>
   );
@@ -223,6 +343,7 @@ export default function SupplierScout() {
   const [suppliers, setSuppliers] = useState([]); const [summary, setSummary] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
   const [sortBy, setSortBy] = useState("score"); const [onlyCptpp, setOnlyCptpp] = useState(false);
+  const [searchView, setSearchView] = useState("list");
   const [addedMsg, setAddedMsg] = useState("");
 
   const [repo, setRepo] = useState([]); const [repoLoaded, setRepoLoaded] = useState(false);
@@ -239,6 +360,8 @@ export default function SupplierScout() {
   const [compFilterSeg, setCompFilterSeg] = useState("all"); const [compFilterState, setCompFilterState] = useState("all"); const [compFilterTier, setCompFilterTier] = useState("all"); const [compSort, setCompSort] = useState("score");
   const [confirmClearComp, setConfirmClearComp] = useState(false);
   const [compView, setCompView] = useState("list");
+  const [compFilterPhone, setCompFilterPhone] = useState(false);
+  const [plantState, setPlantState] = useState("Nuevo León");
 
   useEffect(() => {
     let on = true;
@@ -274,18 +397,18 @@ export default function SupplierScout() {
     const geo = country === "all" ? `Países: cualquiera de los 12 miembros del TIPAT/CPTPP (${ALL_TIPAT}). Prioriza hubs de PP (Vietnam, Malasia, México) y variedad geográfica.` : `País: ${co.label} (miembro TIPAT/CPTPP). Todos los fabricantes en ${co.label}.`;
     return [`Producto: ${pt.label} (${pt.query}).`, geo, specs.length ? `Specs: ${specs.join(", ")}.` : null, targetMOQ ? `MOQ objetivo: ${targetMOQ}.` : null, selectedCerts.length ? `Certificaciones deseadas: ${selectedCerts.join(", ")}.` : null, `Incluye el país de cada fabricante. Fabricantes reales y verificables con URL fuente.`].filter(Boolean).join("\n");
   }
-  async function search() { setLoading(true); setError(null); try { const { list, summary } = await callClaude(SYSTEM_PROMPT, buildUserPrompt(), "suppliers"); setSuppliers(list.map((s, i) => ({ ...s, _id: i }))); setSummary(summary); setHasSearched(true); } catch (e) { setError(e.message || "Error."); setSuppliers([]); setHasSearched(true); } finally { setLoading(false); } }
+  async function search() { setLoading(true); setError(null); try { const { list, summary } = await callClaude(SYSTEM_PROMPT, buildUserPrompt(), "suppliers", 7000); setSuppliers(list.map((s, i) => ({ ...s, _id: i }))); setSummary(summary); setHasSearched(true); } catch (e) { setError(e.message || "Error."); setSuppliers([]); setHasSearched(true); } finally { setLoading(false); } }
   async function searchComp() {
     setCompLoading(true); setCompError(null);
     const kw = compQuery.trim() || "costales y sacos de polipropileno";
     const prompt = `Empresas en MÉXICO que fabrican, importan, distribuyen o comercializan: ${kw}. Son competidores en el mercado mexicano de costalería/empaque de polipropileno. Para cada una incluye teléfono, ubicación (estado/ciudad), coordenadas lat/lng aproximadas, segmento, y EVALÚA sus dimensiones (tamaño, calidad web, amplitud de catálogo, alcance geográfico, sofisticación comercial). Empresas reales y verificables.`;
-    try { const { list, summary } = await callClaude(COMP_SYSTEM_PROMPT, prompt, "competitors"); setCompResults(list.map((s, i) => ({ ...s, _id: i }))); setCompSummary(summary); setCompSearched(true); } catch (e) { setCompError(e.message || "Error."); setCompResults([]); setCompSearched(true); } finally { setCompLoading(false); }
+    try { const { list, summary } = await callClaude(COMP_SYSTEM_PROMPT, prompt, "competitors", 7000); setCompResults(list.map((s, i) => ({ ...s, _id: i }))); setCompSummary(summary); setCompSearched(true); } catch (e) { setCompError(e.message || "Error."); setCompResults([]); setCompSearched(true); } finally { setCompLoading(false); }
   }
 
-  function exportSearchCSV() { const h = ["Empresa", "País", "Ciudad", "Puerto", "Productos", "Certificaciones", "Origen TIPAT", "Cert. origen", "FOB USD", "Web", "Email", "Telefono", "Fuente", "Score"]; const rows = suppliers.map((s) => [s.company, s.country, s.city, s.nearestPort, (s.products || []).join("; "), (s.certifications || []).join("; "), s.cptppOrigin, certMechanismFor(s.country) || "", s.indicativeFobUsd, s.website, s.email, s.phone, s.sourceUrl, s.affinityScore]); downloadCsv([h, ...rows], "busqueda_tipat_pp.csv"); }
+  function exportSearchCSV() { const h = ["Empresa", "País", "Ciudad", "Puerto (IA)", "Puerto cercano", "Dist. puerto (km)", "Lat", "Lng", "Productos", "Certificaciones", "Origen TIPAT", "Cert. origen", "FOB USD", "Web", "Email", "Telefono", "Fuente", "Score"]; const rows = suppliers.map((s) => { const np = supplierNearestPort(s); const co = getSupplierCoords(s); return [s.company, s.country, s.city, s.nearestPort, np ? np.port.name : "", np ? Math.round(np.dist) : "", co ? co.lat : "", co ? co.lng : "", (s.products || []).join("; "), (s.certifications || []).join("; "), s.cptppOrigin, certMechanismFor(s.country) || "", s.indicativeFobUsd, s.website, s.email, s.phone, s.sourceUrl, s.affinityScore]; }); downloadCsv([h, ...rows], "busqueda_tipat_pp.csv"); }
   const POT_LABEL = { unset: "Sin evaluar", yes: "Con potencial", no: "Descartado" };
   function exportRepoCSV() { const h = ["Empresa", "País", "Ciudad", "Puerto", "Origen TIPAT", "Cert. origen", "FOB USD", "Potencial", "Contactado", "Notas", "Web", "Email", "Telefono", "Fuente", "Score"]; const rows = repo.map((r) => [r.company, r.country, r.city, r.nearestPort, r.cptppOrigin, certMechanismFor(r.country) || "", r.indicativeFobUsd, POT_LABEL[r.potential || "unset"], r.contacted ? "Sí" : "No", r.notes, r.website, r.email, r.phone, r.sourceUrl, r.affinityScore]); downloadCsv([h, ...rows], "repositorio_proveedores_tipat.csv"); }
-  function exportCompCSV(src) { const h = ["Empresa", "Segmento", "Tier", "Fuerza", "Tamaño", "Alcance", "Integración", "Catálogo", "Web", "Comercial", "Estado", "Ciudad", "Telefono", "Productos", "Precio ref.", "Notas", "Sitio", "Email", "Fuente"]; const rows = src.map((c) => { const cs = hasScores(c) ? compositeScore(c) : ""; return [c.company, segmentStyle(c.segment).label, hasScores(c) ? tierOf(compositeScore(c)).key : "", cs, clamp100(c.scaleSize), clamp100(c.geoReach), verticalScore(c.segment), clamp100(c.catalogBreadth), clamp100(c.webQuality), clamp100(c.commercialSoph), c.state, c.city, c.phone, (c.products || []).join("; "), c.priceNote, c.userNotes || c.note || "", c.website, c.email, c.sourceUrl]; }); downloadCsv([h, ...rows], "competencia_mx_scoring.csv"); }
+  function exportCompCSV(src) { const h = ["Empresa", "Segmento", "Tier", "Fuerza", "Tamaño", "Alcance", "Integración", "Catálogo", "Web", "Comercial", "Estado", "Ciudad", `Dist. a ${plantState} (km)`, "Telefono", "Productos", "Precio ref.", "Notas", "Sitio", "Email", "Fuente"]; const rows = src.map((c) => { const cs = hasScores(c) ? compositeScore(c) : ""; const d = compDistanceKm(c); return [c.company, segmentStyle(c.segment).label, hasScores(c) ? tierOf(compositeScore(c)).key : "", cs, clamp100(c.scaleSize), clamp100(c.geoReach), verticalScore(c.segment), clamp100(c.catalogBreadth), clamp100(c.webQuality), clamp100(c.commercialSoph), c.state, c.city, d != null ? Math.round(d) : "", c.phone, (c.products || []).join("; "), c.priceNote, c.userNotes || c.note || "", c.website, c.email, c.sourceUrl]; }); downloadCsv([h, ...rows], "competencia_mx_scoring.csv"); }
 
   let displayed = [...suppliers];
   if (onlyCptpp) displayed = displayed.filter((s) => /^(s|yes)/i.test((s.cptppOrigin || "").toString()));
@@ -307,6 +430,7 @@ export default function SupplierScout() {
   let compDisplayed = [...competitors];
   if (compFilterSeg !== "all") compDisplayed = compDisplayed.filter((c) => (c.segment || "").toLowerCase().includes(compFilterSeg));
   if (compFilterState !== "all") compDisplayed = compDisplayed.filter((c) => c.state === compFilterState);
+  if (compFilterPhone) compDisplayed = compDisplayed.filter((c) => !isEmpty(c.phone));
   if (compFilterTier !== "all") compDisplayed = compDisplayed.filter((c) => hasScores(c) && tierOf(compositeScore(c)).key === compFilterTier);
   if (compSort === "score") compDisplayed.sort((a, b) => (hasScores(b) ? compositeScore(b) : -1) - (hasScores(a) ? compositeScore(a) : -1));
   else compDisplayed.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
@@ -316,6 +440,8 @@ export default function SupplierScout() {
   const stateRanking = Object.entries(stateCount).sort((a, b) => b[1] - a[1]);
   const maxCount = stateRanking.length ? stateRanking[0][1] : 1;
   const unplaced = competitors.filter((c) => !getCoords(c)).length;
+  const plant = MX_STATES.find((st) => st.n === plantState) || MX_STATES.find((st) => st.n === "Nuevo León");
+  function compDistanceKm(c) { const co = getCoords(c); if (!co || !plant) return null; return haversineKm(co.lat, co.lng, plant.lat, plant.lng); }
 
   const Chip = ({ children, active, onClick, accent }) => (<button onClick={onClick} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? accent ? "bg-red-600 border-red-600 text-white" : "bg-neutral-100 border-neutral-100 text-neutral-900" : "bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"}`}>{children}</button>);
   const Label = ({ children }) => (<div className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500 mb-2">{children}</div>);
@@ -354,7 +480,7 @@ export default function SupplierScout() {
       <div className={`relative bg-neutral-900/60 border rounded-xl p-5 transition-colors ${saved ? "border-red-600/60" : "border-neutral-800 hover:border-neutral-600"}`}>
         <button onClick={onToggle} title={saved ? "Quitar" : "Guardar"} className={`absolute top-4 right-4 h-7 px-2 rounded-md border flex items-center gap-1 text-[11px] transition-colors ${saved ? "bg-red-600/15 border-red-600 text-red-300" : "border-neutral-600 text-neutral-400 hover:border-neutral-400"}`}>{saved ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}{saved ? "Guardado" : "Guardar"}</button>
         <div className="pr-24"><CompScoreHeader c={c} /></div>
-        <div className="mt-3">{tel ? (<a href={tel} className="inline-flex items-center gap-2 text-base font-semibold text-neutral-100 hover:text-red-400 transition-colors"><Phone size={16} className="text-red-500" /> {c.phone}</a>) : (<span className="inline-flex items-center gap-2 text-sm text-neutral-600"><Phone size={14} /> Teléfono no disponible</span>)}</div>
+        <div className="mt-3">{tel ? (<a href={tel} className="inline-flex items-center gap-2 text-base font-semibold text-neutral-100 hover:text-red-400 transition-colors"><Phone size={16} className="text-red-500" /> {c.phone}</a>) : (<span className="inline-flex items-center gap-2 text-sm text-neutral-600"><Phone size={14} /> Teléfono no disponible</span>)}{(() => { const d = compDistanceKm(c); return d != null ? <span className="ml-3 inline-flex items-center gap-1 text-[11px] text-neutral-400"><Navigation size={11} className="text-red-500" /> ~{Math.round(d)} km de {plantState}</span> : null; })()}</div>
         {hasScores(c) && <ScoreBreakdown c={c} />}
         {!isEmpty(c.scoreNote) && <p className="text-[11px] text-neutral-500 mt-2 italic">{c.scoreNote}</p>}
         {!isEmpty(c.note) && <p className="text-xs text-neutral-400 mt-2 leading-relaxed">{c.note}</p>}
@@ -401,19 +527,19 @@ export default function SupplierScout() {
             {error && !loading && (<div className="bg-red-950/40 border border-red-900/60 rounded-xl p-4 mb-6"><div className="flex items-start gap-3 text-sm text-red-300"><AlertTriangle size={18} className="shrink-0 mt-0.5" /><div><div className="font-medium mb-1">No se pudo completar la búsqueda</div><div className="text-red-300/80">{error}</div></div></div><button onClick={search} className="mt-3 ml-7 inline-flex items-center gap-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg transition-colors"><RotateCw size={13} /> Reintentar</button></div>)}
             {!loading && hasSearched && suppliers.length > 0 && (<>
               {summary && <p className="text-sm text-neutral-400 mb-4 italic">{summary}</p>}
-              <div className="flex flex-wrap items-center gap-3 mb-5"><span className="text-xs text-neutral-500">{displayed.length} proveedor(es)</span><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={selCls}><option value="score">Ordenar: Score ↓</option><option value="country">Ordenar: País</option><option value="name">Ordenar: Nombre A–Z</option></select><Chip active={onlyCptpp} onClick={() => setOnlyCptpp((v) => !v)} accent>Solo elegibles TIPAT</Chip><div className="flex-1" />{addedMsg && <span className="text-[11px] text-emerald-400">{addedMsg}</span>}<button onClick={saveAllToRepo} className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-900 px-3 py-1.5 rounded-lg hover:bg-white transition-colors"><Bookmark size={14} /> Guardar todos</button><button onClick={exportSearchCSV} className="inline-flex items-center gap-1.5 text-xs font-medium border border-neutral-700 text-neutral-300 px-3 py-1.5 rounded-lg hover:border-neutral-500 transition-colors"><Download size={14} /> CSV</button></div>
-              <div className="grid gap-4 md:grid-cols-2">{displayed.map((s) => { const og = originStyle(s.cptppOrigin); const web = normalizeUrl(s.website); const src = normalizeUrl(s.sourceUrl); const saved = isInRepo(s); const mech = certMechanismFor(s.country); return (
+              <div className="flex flex-wrap items-center gap-3 mb-5"><span className="text-xs text-neutral-500">{displayed.length} proveedor(es)</span><div className="flex gap-1 bg-neutral-900 border border-neutral-800 rounded-lg p-0.5"><button onClick={() => setSearchView("list")} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-colors ${searchView === "list" ? "bg-neutral-100 text-neutral-900" : "text-neutral-400 hover:text-neutral-200"}`}><List size={13} /> Lista</button><button onClick={() => setSearchView("map")} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-colors ${searchView === "map" ? "bg-red-600 text-white" : "text-neutral-400 hover:text-neutral-200"}`}><Map size={13} /> Mapa</button></div><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={selCls}><option value="score">Ordenar: Score ↓</option><option value="country">Ordenar: País</option><option value="name">Ordenar: Nombre A–Z</option></select><Chip active={onlyCptpp} onClick={() => setOnlyCptpp((v) => !v)} accent>Solo elegibles TIPAT</Chip><div className="flex-1" />{addedMsg && <span className="text-[11px] text-emerald-400">{addedMsg}</span>}<button onClick={saveAllToRepo} className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-900 px-3 py-1.5 rounded-lg hover:bg-white transition-colors"><Bookmark size={14} /> Guardar todos</button><button onClick={exportSearchCSV} className="inline-flex items-center gap-1.5 text-xs font-medium border border-neutral-700 text-neutral-300 px-3 py-1.5 rounded-lg hover:border-neutral-500 transition-colors"><Download size={14} /> CSV</button></div>
+              {searchView === "map" ? (<><div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-2 mb-3"><WorldMap suppliers={displayed} /></div><div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-3 text-[11px]">{Object.values(COUNTRY_META).map((m) => (<span key={m.label} className="inline-flex items-center gap-1.5 text-neutral-400"><span className="h-2.5 w-2.5 rounded-full" style={{ background: m.color }} />{m.label}</span>))}<span className="inline-flex items-center gap-1.5 text-neutral-500"><span className="inline-block h-2 w-2 bg-sky-500/60 rotate-45" /> puerto</span><span className="text-neutral-600">· línea roja = puerto más cercano · tamaño del punto = score</span></div>{(() => { const un = displayed.filter((s) => !getSupplierCoords(s)).length; return un > 0 ? <p className="text-[11px] text-amber-300/80 mb-2 flex items-center gap-1.5"><AlertTriangle size={12} /> {un} proveedor(es) sin ubicación reconocible — no aparecen en el mapa.</p> : null; })()}</>) : (<div className="grid gap-4 md:grid-cols-2">{displayed.map((s) => { const og = originStyle(s.cptppOrigin); const web = normalizeUrl(s.website); const src = normalizeUrl(s.sourceUrl); const saved = isInRepo(s); const mech = certMechanismFor(s.country); return (
                 <div key={s._id} className={`relative bg-neutral-900/60 border rounded-xl p-5 transition-colors ${saved ? "border-red-600/60" : "border-neutral-800 hover:border-neutral-600"}`}>
                   <button onClick={() => toggleRepoOne(s)} title={saved ? "Quitar" : "Guardar"} className={`absolute top-4 right-4 h-7 px-2 rounded-md border flex items-center gap-1 text-[11px] transition-colors ${saved ? "bg-red-600/15 border-red-600 text-red-300" : "border-neutral-600 text-neutral-400 hover:border-neutral-400"}`}>{saved ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}{saved ? "Guardado" : "Guardar"}</button>
                   <div className="flex items-start gap-3 pr-24"><span className={`shrink-0 text-sm font-bold px-2.5 py-1 rounded-md border ${scoreColor(s.affinityScore)}`}>{s.affinityScore ?? "—"}</span><div><h3 className="font-semibold text-neutral-100 leading-tight">{s.company}</h3><div className="flex items-center gap-1.5 text-xs text-neutral-500 mt-1"><MapPin size={12} />{!isEmpty(s.country) && <span className="text-neutral-400 font-medium">{s.country}</span>}<span>{[s.city, s.province].filter((x) => !isEmpty(x)).join(", ")}</span></div></div></div>
                   {!isEmpty(s.scoreRationale) && <p className="text-xs text-neutral-400 mt-3 leading-relaxed">{s.scoreRationale}</p>}
                   <div className="flex flex-wrap gap-1.5 mt-3">{(s.products || []).slice(0, 4).map((p, i) => (<span key={i} className="text-[11px] bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded">{p}</span>))}</div>
-                  <div className="grid grid-cols-2 gap-y-2 gap-x-3 mt-4 text-xs">{!isEmpty(s.nearestPort) && <div className="flex items-center gap-1.5 text-neutral-400"><Anchor size={12} className="text-neutral-500" />{s.nearestPort}</div>}{!isEmpty(s.estimatedCapacity) && <div className="flex items-center gap-1.5 text-neutral-400"><Factory size={12} className="text-neutral-500" />{s.estimatedCapacity}</div>}{!isEmpty(s.indicativeFobUsd) && <div className="flex items-center gap-1.5 text-neutral-400 col-span-2"><span className="text-neutral-500">FOB:</span>{s.indicativeFobUsd}</div>}</div>
+                  <div className="grid grid-cols-2 gap-y-2 gap-x-3 mt-4 text-xs">{(() => { const np = supplierNearestPort(s); return np ? <div className="flex items-center gap-1.5 text-neutral-300 col-span-2"><Anchor size={12} className="text-sky-500" /><span className="text-neutral-500">Puerto cercano:</span> {np.port.name} <span className="text-neutral-500">(~{Math.round(np.dist)} km{np.approx ? ", aprox." : ""})</span></div> : null; })()}{!isEmpty(s.nearestPort) && <div className="flex items-center gap-1.5 text-neutral-400"><Anchor size={12} className="text-neutral-500" />{s.nearestPort}</div>}{!isEmpty(s.estimatedCapacity) && <div className="flex items-center gap-1.5 text-neutral-400"><Factory size={12} className="text-neutral-500" />{s.estimatedCapacity}</div>}{!isEmpty(s.indicativeFobUsd) && <div className="flex items-center gap-1.5 text-neutral-400 col-span-2"><span className="text-neutral-500">FOB:</span>{s.indicativeFobUsd}</div>}</div>
                   <div className="flex flex-wrap gap-1.5 mt-3"><span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border ${og.cls}`}>{og.icon && <Check size={11} />}{og.label}</span>{(s.certifications || []).filter((c) => !/tipat|cptpp|origen/i.test(c)).slice(0, 4).map((c, i) => (<span key={i} className="text-[11px] border border-neutral-700 text-neutral-400 px-2 py-0.5 rounded">{c}</span>))}</div>
                   {mech && <div className="flex items-center gap-1.5 mt-2 text-[11px] text-neutral-500"><FileBadge size={11} /> Cert. origen: {mech}</div>}
                   {renderDeltas(s)}
                   <div className="flex items-center gap-3 mt-4 pt-3 border-t border-neutral-800 text-xs">{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-neutral-400 hover:text-red-400"><Globe size={13} /> Web</a>}{!isEmpty(s.email) && <a href={`mailto:${s.email}`} className="inline-flex items-center gap-1 text-neutral-400 hover:text-red-400"><Mail size={13} /> Email</a>}{!isEmpty(s.phone) && <span className="inline-flex items-center gap-1 text-neutral-500"><Phone size={13} /> {s.phone}</span>}<div className="flex-1" />{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-red-500 hover:text-red-400 font-medium">Fuente <ExternalLink size={12} /></a>}</div>
-                </div>); })}</div>
+                </div>); })}</div>)}
             </>)}
             {!loading && hasSearched && suppliers.length === 0 && !error && (<div className="text-center py-12 text-neutral-500 text-sm"><Building2 size={28} className="mx-auto mb-3 text-neutral-700" />No se encontraron proveedores verificables. Prueba otro país o quita filtros.</div>)}
             {!hasSearched && !loading && (<div className="text-center py-12 text-neutral-600 text-sm">Define criterios y pulsa <span className="text-red-500 font-medium">Buscar proveedores</span>.</div>)}
@@ -428,7 +554,7 @@ export default function SupplierScout() {
               <div className="space-y-3">{repoDisplayed.map((r) => { const og = originStyle(r.cptppOrigin); const web = normalizeUrl(r.website); const src = normalizeUrl(r.sourceUrl); const mech = certMechanismFor(r.country); return (
                 <div key={r.id} className={`bg-neutral-900/60 border rounded-xl p-4 ${r.potential === "yes" ? "border-emerald-600/40" : r.potential === "no" ? "border-neutral-800 opacity-70" : "border-neutral-800"}`}>
                   <div className="flex items-start gap-3"><span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded border ${scoreColor(r.affinityScore)}`}>{r.affinityScore ?? "—"}</span><div className="flex-1 min-w-0"><h3 className={`font-semibold text-neutral-100 leading-tight truncate ${r.potential === "no" ? "line-through text-neutral-400" : ""}`}>{r.company}</h3><div className="flex items-center gap-1.5 text-xs text-neutral-500 mt-0.5"><MapPin size={11} />{!isEmpty(r.country) && <span className="text-neutral-400">{r.country}</span>}<span>{[r.city, r.province].filter((x) => !isEmpty(x)).join(", ")}</span></div></div><button onClick={() => commitRepo(repo.filter((x) => x.id !== r.id))} title="Eliminar" className="shrink-0 text-neutral-600 hover:text-red-400 transition-colors p-1"><Trash2 size={15} /></button></div>
-                  <div className="flex flex-wrap items-center gap-1.5 mt-3"><span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border ${og.cls}`}>{og.icon && <Check size={11} />}{og.label}</span>{mech && <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500"><FileBadge size={10} /> {mech}</span>}{!isEmpty(r.nearestPort) && <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500"><Anchor size={10} /> {r.nearestPort}</span>}{!isEmpty(r.indicativeFobUsd) && <span className="text-[11px] text-neutral-500">FOB: {r.indicativeFobUsd}</span>}<div className="flex-1" />{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Globe size={11} /> Web</a>}{!isEmpty(r.email) && <a href={`mailto:${r.email}`} className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Mail size={11} /> Email</a>}{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-400">Fuente <ExternalLink size={10} /></a>}</div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-3"><span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border ${og.cls}`}>{og.icon && <Check size={11} />}{og.label}</span>{mech && <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500"><FileBadge size={10} /> {mech}</span>}{(() => { const np = supplierNearestPort(r); return np ? <span className="inline-flex items-center gap-1 text-[11px] text-sky-300/80"><Anchor size={10} /> {np.port.name} ~{Math.round(np.dist)} km</span> : null; })()}{!isEmpty(r.nearestPort) && <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500"><Anchor size={10} /> {r.nearestPort}</span>}{!isEmpty(r.indicativeFobUsd) && <span className="text-[11px] text-neutral-500">FOB: {r.indicativeFobUsd}</span>}<div className="flex-1" />{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Globe size={11} /> Web</a>}{!isEmpty(r.email) && <a href={`mailto:${r.email}`} className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Mail size={11} /> Email</a>}{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-400">Fuente <ExternalLink size={10} /></a>}</div>
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 pt-3 border-t border-neutral-800">
                     <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-wider text-neutral-600 mr-0.5">Potencial</span><SegBtn active={(r.potential || "unset") === "unset"} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, potential: "unset" } : x))} color="bg-neutral-700 border-neutral-600 text-neutral-100">Sin evaluar</SegBtn><SegBtn active={r.potential === "yes"} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, potential: "yes" } : x))} color="bg-emerald-600 border-emerald-600 text-white">Con potencial</SegBtn><SegBtn active={r.potential === "no"} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, potential: "no" } : x))} color="bg-neutral-600 border-neutral-600 text-neutral-200">Descartado</SegBtn></div>
                     <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-wider text-neutral-600 mr-0.5">Contacto</span><SegBtn active={!r.contacted} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, contacted: false } : x))} color="bg-neutral-700 border-neutral-600 text-neutral-100">No contactado</SegBtn><SegBtn active={r.contacted} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, contacted: true } : x))} color="bg-red-600 border-red-600 text-white">Contactado</SegBtn></div>
@@ -461,11 +587,12 @@ export default function SupplierScout() {
               {competitors.length > 0 && (<div className="flex gap-1 bg-neutral-900 border border-neutral-800 rounded-lg p-0.5"><button onClick={() => setCompView("list")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${compView === "list" ? "bg-neutral-100 text-neutral-900" : "text-neutral-400 hover:text-neutral-200"}`}><List size={13} /> Lista</button><button onClick={() => setCompView("map")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${compView === "map" ? "bg-red-600 text-white" : "text-neutral-400 hover:text-neutral-200"}`}><Map size={13} /> Mapa</button></div>)}
             </div>
 
+            {competitors.length > 0 && (<div className="flex flex-wrap items-center gap-2 mb-3 text-xs"><span className="inline-flex items-center gap-1.5 text-neutral-300"><Crosshair size={13} className="text-red-500" /> Tu planta:</span><select value={plantState} onChange={(e) => setPlantState(e.target.value)} className={selCls}>{MX_STATES.map((st) => (<option key={st.n} value={st.n}>{st.n}</option>))}</select><span className="text-neutral-600">— las distancias a cada competidor se miden desde aquí</span></div>)}
             {competitors.length > 0 && (<div className="flex items-center gap-4 text-xs mb-4"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-500" /><span className="text-neutral-400">{tierCount.A} Tier A</span></span><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-500" /><span className="text-neutral-400">{tierCount.B} Tier B</span></span><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-neutral-500" /><span className="text-neutral-400">{tierCount.C} Tier C</span></span></div>)}
 
             {!compLoaded ? (<div className="text-center py-8 text-neutral-500 text-sm"><Loader2 size={22} className="animate-spin text-red-500 mx-auto mb-2" />Cargando…</div>) : competitors.length === 0 ? (<div className="text-center py-10 text-neutral-600 text-sm border border-dashed border-neutral-800 rounded-xl"><Inbox size={26} className="mx-auto mb-2 text-neutral-700" />Aún no guardas competidores. Busca arriba y pulsa Guardar para catalogarlos, puntuarlos y mapearlos.</div>) : compView === "map" ? (
               <>
-                <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-2 mb-3"><MexicoMap competitors={competitors} /></div>
+                <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-2 mb-3"><MexicoMap competitors={competitors} plant={plant} /></div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-2 text-[11px]">{SEG_COLORS.slice(0, 4).map((sg) => (<span key={sg.key} className="inline-flex items-center gap-1.5 text-neutral-400"><span className="h-2.5 w-2.5 rounded-full" style={{ background: sg.color }} />{sg.label}</span>))}<span className="text-neutral-600">· tamaño del punto = fuerza competitiva</span></div>
                 {unplaced > 0 && <p className="text-[11px] text-amber-300/80 mb-4 flex items-center gap-1.5"><AlertTriangle size={12} /> {unplaced} competidor(es) sin ubicación reconocible — no aparecen en el mapa.</p>}
                 <div className="bg-neutral-900/40 border border-neutral-800 rounded-xl p-4 mt-2">
@@ -475,13 +602,13 @@ export default function SupplierScout() {
               </>
             ) : (
               <>
-                <div className="flex flex-wrap items-center gap-2 mb-4 text-xs"><select value={compSort} onChange={(e) => setCompSort(e.target.value)} className={selCls}><option value="score">Ordenar: Fuerza ↓</option><option value="recent">Ordenar: Recientes</option></select><select value={compFilterTier} onChange={(e) => setCompFilterTier(e.target.value)} className={selCls}><option value="all">Tier: todos</option><option value="A">Tier A</option><option value="B">Tier B</option><option value="C">Tier C</option></select><select value={compFilterSeg} onChange={(e) => setCompFilterSeg(e.target.value)} className={selCls}><option value="all">Segmento: todos</option><option value="fabric">Fabricantes</option><option value="import">Importadores</option><option value="distrib">Distribuidores</option><option value="comerc">Comercializadores</option></select><select value={compFilterState} onChange={(e) => setCompFilterState(e.target.value)} className={selCls}><option value="all">Estado: todos</option>{compStates.map((s) => (<option key={s} value={s}>{s}</option>))}</select><span className="text-neutral-600">{compDisplayed.length} mostrados</span><div className="flex-1" /><button onClick={() => exportCompCSV(competitors)} className="inline-flex items-center gap-1.5 text-xs font-medium border border-neutral-700 text-neutral-300 px-3 py-1.5 rounded-lg hover:border-neutral-500 transition-colors"><Download size={14} /> CSV</button>{confirmClearComp ? (<span className="inline-flex items-center gap-2"><span className="text-neutral-400">¿Vaciar?</span><button onClick={() => { commitComp([]); setConfirmClearComp(false); }} className="font-medium bg-red-600 text-white px-2.5 py-1 rounded">Sí</button><button onClick={() => setConfirmClearComp(false)} className="text-neutral-400 px-2 py-1">Cancelar</button></span>) : (<button onClick={() => setConfirmClearComp(true)} className="inline-flex items-center gap-1.5 text-xs font-medium border border-neutral-700 text-neutral-400 px-3 py-1.5 rounded-lg hover:border-red-700 hover:text-red-400 transition-colors"><Trash2 size={14} /> Vaciar</button>)}</div>
+                <div className="flex flex-wrap items-center gap-2 mb-4 text-xs"><select value={compSort} onChange={(e) => setCompSort(e.target.value)} className={selCls}><option value="score">Ordenar: Fuerza ↓</option><option value="recent">Ordenar: Recientes</option></select><select value={compFilterTier} onChange={(e) => setCompFilterTier(e.target.value)} className={selCls}><option value="all">Tier: todos</option><option value="A">Tier A</option><option value="B">Tier B</option><option value="C">Tier C</option></select><select value={compFilterSeg} onChange={(e) => setCompFilterSeg(e.target.value)} className={selCls}><option value="all">Segmento: todos</option><option value="fabric">Fabricantes</option><option value="import">Importadores</option><option value="distrib">Distribuidores</option><option value="comerc">Comercializadores</option></select><select value={compFilterState} onChange={(e) => setCompFilterState(e.target.value)} className={selCls}><option value="all">Estado: todos</option>{compStates.map((s) => (<option key={s} value={s}>{s}</option>))}</select><Chip active={compFilterPhone} onClick={() => setCompFilterPhone((v) => !v)}>Solo con teléfono</Chip><span className="text-neutral-600">{compDisplayed.length} mostrados</span><div className="flex-1" /><button onClick={() => exportCompCSV(competitors)} className="inline-flex items-center gap-1.5 text-xs font-medium border border-neutral-700 text-neutral-300 px-3 py-1.5 rounded-lg hover:border-neutral-500 transition-colors"><Download size={14} /> CSV</button>{confirmClearComp ? (<span className="inline-flex items-center gap-2"><span className="text-neutral-400">¿Vaciar?</span><button onClick={() => { commitComp([]); setConfirmClearComp(false); }} className="font-medium bg-red-600 text-white px-2.5 py-1 rounded">Sí</button><button onClick={() => setConfirmClearComp(false)} className="text-neutral-400 px-2 py-1">Cancelar</button></span>) : (<button onClick={() => setConfirmClearComp(true)} className="inline-flex items-center gap-1.5 text-xs font-medium border border-neutral-700 text-neutral-400 px-3 py-1.5 rounded-lg hover:border-red-700 hover:text-red-400 transition-colors"><Trash2 size={14} /> Vaciar</button>)}</div>
                 <div className="space-y-3">{compDisplayed.map((c) => { const web = normalizeUrl(c.website); const src = normalizeUrl(c.sourceUrl); const tel = telHref(c.phone); return (
                   <div key={c.id} className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-4">
                     <div className="flex items-start gap-3"><div className="flex-1 min-w-0"><CompScoreHeader c={c} /></div><button onClick={() => commitComp(competitors.filter((x) => x.id !== c.id))} title="Eliminar" className="shrink-0 text-neutral-600 hover:text-red-400 transition-colors p-1"><Trash2 size={15} /></button></div>
                     {hasScores(c) && <ScoreBreakdown c={c} />}
                     {!isEmpty(c.scoreNote) && <p className="text-[11px] text-neutral-500 mt-2 italic">{c.scoreNote}</p>}
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">{tel ? (<a href={tel} className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-100 hover:text-red-400 transition-colors"><Phone size={15} className="text-red-500" /> {c.phone}</a>) : (<span className="inline-flex items-center gap-2 text-xs text-neutral-600"><Phone size={13} /> Teléfono no disponible</span>)}{!isEmpty(c.priceNote) && <span className="inline-flex items-center gap-1 text-[11px] text-amber-300/90"><Tag size={11} /> {c.priceNote}</span>}<div className="flex-1" />{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Globe size={11} /> Web</a>}{!isEmpty(c.email) && <a href={`mailto:${c.email}`} className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Mail size={11} /> Email</a>}{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-400">Fuente <ExternalLink size={10} /></a>}</div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">{tel ? (<a href={tel} className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-100 hover:text-red-400 transition-colors"><Phone size={15} className="text-red-500" /> {c.phone}</a>) : (<span className="inline-flex items-center gap-2 text-xs text-neutral-600"><Phone size={13} /> Teléfono no disponible</span>)}{(() => { const d = compDistanceKm(c); return d != null ? <span className="inline-flex items-center gap-1 text-[11px] text-neutral-400"><Navigation size={11} className="text-red-500" /> ~{Math.round(d)} km de {plantState}</span> : null; })()}{!isEmpty(c.priceNote) && <span className="inline-flex items-center gap-1 text-[11px] text-amber-300/90"><Tag size={11} /> {c.priceNote}</span>}<div className="flex-1" />{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Globe size={11} /> Web</a>}{!isEmpty(c.email) && <a href={`mailto:${c.email}`} className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Mail size={11} /> Email</a>}{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-400">Fuente <ExternalLink size={10} /></a>}</div>
                     <input type="text" value={c.userNotes || ""} onChange={(e) => patchCompLocal(c.id, { userNotes: e.target.value })} onBlur={persistCompNow} placeholder="Notas (precios vistos, posicionamiento, clientes…)" className="mt-3 w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 focus:border-red-600 focus:outline-none" />
                   </div>); })}</div>
               </>
