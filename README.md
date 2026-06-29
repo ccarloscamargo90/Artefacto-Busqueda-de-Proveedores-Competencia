@@ -128,12 +128,29 @@ Notas:
 > **Probar el build de producción en local:** `npm run build && ANTHROPIC_API_KEY=sk-ant-... npm start`,
 > luego abre http://localhost:3000.
 
-### Escalar a datos compartidos (a futuro)
+### Datos compartidos por el equipo (Postgres) — opcional
 
-Hoy el repositorio de proveedores/competidores vive en el navegador (`localStorage`), es decir
-es por dispositivo. Cuando quieras que tu equipo comparta los mismos datos desde cualquier lado,
-el siguiente paso es una base de datos (Render ofrece Postgres) y un par de endpoints en
-`server.js`. No hace falta ahora; el diseño ya está listo para crecer hacia eso.
+Por defecto, el repositorio de proveedores/competidores vive en el navegador (`localStorage`):
+es **por dispositivo**. Para que **todo el equipo comparta los mismos datos** desde cualquier
+lado, conecta una base de datos Postgres; la app la detecta sola y cambia a modo compartido.
+
+**Con el Blueprint (automático):** `render.yaml` ya incluye una base `supplier-scout-db` y conecta
+`DATABASE_URL`. Si (re)despliegas con **New + → Blueprint**, Render crea la base y activa el modo
+compartido sin más pasos.
+
+**Manual (si tu servicio ya existe):**
+1. Render → **New + → PostgreSQL** → créala (plan free) en la misma región que tu web service.
+2. Copia su **Internal Database URL**.
+3. En tu web service → **Environment** → agrega `DATABASE_URL` con ese valor → guarda (redepliega).
+
+Al arrancar verás en los logs `Base de datos conectada: almacenamiento compartido ACTIVO`. La app
+crea sola la tabla `kv`. Si la base no está disponible, vuelve a `localStorage` automáticamente
+(no se rompe nada).
+
+> Notas: el Postgres **free** de Render caduca a los ~30 días (respalda con el botón **CSV**). La
+> escritura es *last-write-wins* sobre el conjunto completo (suficiente para un equipo pequeño;
+> si dos personas guardan a la vez, gana la última). El acceso a los datos queda protegido por el
+> mismo login (`APP_PASSWORD`) si lo activaste.
 
 ## Estructura
 

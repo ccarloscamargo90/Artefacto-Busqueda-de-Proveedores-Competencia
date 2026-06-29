@@ -6,6 +6,7 @@
 import express from "express";
 import path from "path";
 import crypto from "crypto";
+import pg from "pg";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -87,6 +88,44 @@ app.post("/api/anthropic", express.json({ limit: "1mb" }), async (req, res) => {
     console.error("Proxy error:", e);
     res.status(502).json({ type: "error", error: { message: "No se pudo contactar la API de Anthropic." } });
   }
+});
+
+// --- Almacenamiento compartido opcional (Postgres) ---
+// Si DATABASE_URL está definida, el repositorio/competencia se guarda en la base
+// de datos y lo comparte todo el equipo. Si no, el cliente usa localStorage.
+let pool = null, dbReady = false;
+const KV_KEY_RE = /^intergranel-[a-z0-9-]+$/; // solo las claves de la app
+async function initDb() {
+  if (!process.env.DATABASE_URL) return;
+  pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 });
+  try {
+    await pool.query("CREATE TABLE IF NOT EXISTS kv (key text PRIMARY KEY, value text NOT NULL, updated_at timestamptz DEFAULT now())");
+    dbReady = true;
+    console.log("Base de datos conectada: almacenamiento compartido ACTIVO.");
+  } catch (e) {
+    dbReady = false;
+    console.error("No se pudo inicializar la base de datos; se usará localStorage por navegador:", e.message);
+  }
+}
+initDb();
+
+app.get("/api/kv/:key", async (req, res) => {
+  if (!dbReady) return res.json({ shared: false });
+  if (!KV_KEY_RE.test(req.params.key)) return res.status(400).json({ shared: false, error: "clave no permitida" });
+  try {
+    const r = await pool.query("SELECT value FROM kv WHERE key=$1", [req.params.key]);
+    res.json({ shared: true, value: r.rows[0] ? r.rows[0].value : null });
+  } catch (e) { console.error("kv get:", e.message); res.json({ shared: false }); }
+});
+app.put("/api/kv/:key", express.json({ limit: "6mb" }), async (req, res) => {
+  if (!dbReady) return res.json({ shared: false });
+  if (!KV_KEY_RE.test(req.params.key)) return res.status(400).json({ shared: false, error: "clave no permitida" });
+  const value = req.body && typeof req.body.value === "string" ? req.body.value : null;
+  if (value == null) return res.status(400).json({ shared: false, error: "value requerido" });
+  try {
+    await pool.query("INSERT INTO kv(key,value,updated_at) VALUES($1,$2,now()) ON CONFLICT(key) DO UPDATE SET value=$2, updated_at=now()", [req.params.key, value]);
+    res.json({ shared: true });
+  } catch (e) { console.error("kv put:", e.message); res.json({ shared: false }); }
 });
 
 // Frontend compilado + fallback SPA
