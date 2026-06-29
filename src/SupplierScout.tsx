@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Package, MapPin, Globe, Mail, Phone, ExternalLink, Download, Check, Loader2, AlertTriangle, Anchor, ShieldCheck, Building2, ChevronDown, Factory, Target, TrendingDown, TrendingUp, RotateCw, FileBadge, Bookmark, BookmarkCheck, Trash2, Database, Inbox, Swords, Tag, Map, List, Gauge, Navigation, Crosshair, Upload } from "lucide-react";
+import { Search, Package, MapPin, Globe, Mail, Phone, ExternalLink, Download, Check, Loader2, AlertTriangle, Anchor, ShieldCheck, Building2, ChevronDown, Factory, Target, TrendingDown, TrendingUp, RotateCw, FileBadge, Bookmark, BookmarkCheck, Trash2, Database, Inbox, Swords, Tag, Map, List, Gauge, Navigation, Crosshair, Upload, Sparkles, X, Copy } from "lucide-react";
 
 const PRODUCT_TYPES = [
   { id: "saco_pp", label: "Saco PP tejido", query: "polypropylene woven bags / PP sacks manufacturer" },
@@ -181,6 +181,8 @@ IMPORTANTE: JSON CORTO. Máximo 8 empresas. Solo el objeto JSON, sin markdown. E
 
 Devuelve hasta 8 empresas mexicanas reales. Evalúa con honestidad sobre evidencia. Sé conciso.`;
 
+const OUTREACH_SYSTEM_PROMPT = `Eres un asistente de compras industriales. Redactas correos de contacto y solicitud de cotización (RFQ) a proveedores: profesionales, claros, concisos y listos para enviar. No inventes datos del proveedor ni del remitente más allá de lo dado. Devuelve SOLO un objeto JSON {"subject":"","body":""} sin markdown; el "body" usa saltos de línea reales y un cierre cordial con firma genérica.`;
+
 function scoreColor(s) { const n = Number(s) || 0; if (n >= 80) return "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"; if (n >= 60) return "bg-amber-500/15 text-amber-300 border-amber-500/30"; return "bg-neutral-500/15 text-neutral-300 border-neutral-600/40"; }
 function originStyle(v) { const val = (v || "").toString().toLowerCase(); if (val.startsWith("s") || val === "yes") return { label: "Elegible TIPAT", icon: true, cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" }; if (val.startsWith("n") || val === "no") return { label: "Sin preferencia TIPAT", icon: false, cls: "bg-red-500/15 text-red-300 border-red-500/30" }; return { label: "TIPAT por confirmar", icon: false, cls: "bg-neutral-700/40 text-neutral-400 border-neutral-600/40" }; }
 function segmentStyle(seg) { const s = (seg || "").toLowerCase(); if (s.includes("fabric")) return { label: "Fabricante", cls: "bg-red-500/15 text-red-300 border-red-500/30" }; if (s.includes("import")) return { label: "Importador", cls: "bg-amber-500/15 text-amber-300 border-amber-500/30" }; if (s.includes("distrib")) return { label: "Distribuidor", cls: "bg-sky-500/15 text-sky-300 border-sky-500/30" }; if (s.includes("comerc")) return { label: "Comercializador", cls: "bg-neutral-600/30 text-neutral-300 border-neutral-600/40" }; return { label: seg || "—", cls: "bg-neutral-700/40 text-neutral-400 border-neutral-600/40" }; }
@@ -248,6 +250,15 @@ async function callClaude(systemPrompt, userPrompt, arrKey, maxTokens = 4000) {
   const parsed = robustParse(text, arrKey); const list = (parsed && parsed[arrKey]) || [];
   if (list.length === 0) throw new Error("La respuesta llegó incompleta o vacía. Reintenta o acota los criterios.");
   return { list, summary: (parsed && parsed.searchSummary) || "" };
+}
+async function callClaudeText(systemPrompt, userPrompt, maxTokens = 1500) {
+  const res = await fetch(ANTHROPIC_API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] }) });
+  let data; try { data = await res.json(); } catch (_) { throw new Error(`La API respondió ${res.status} y no se pudo leer. Reintenta.`); }
+  if (data && (data.type === "error" || data.error)) throw new Error(data.error?.message || "La API devolvió un error. Reintenta.");
+  if (!data || !Array.isArray(data.content)) throw new Error("Respuesta inesperada de la API. Reintenta.");
+  const text = data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  if (!text.trim()) throw new Error("La IA no devolvió texto. Reintenta.");
+  return text;
 }
 function downloadCsv(rows, name) {
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -415,6 +426,7 @@ export default function SupplierScout() {
   const [compFilterPhone, setCompFilterPhone] = useState(false);
   const [plantState, setPlantState] = useState("Nuevo León");
   const [repoImportMsg, setRepoImportMsg] = useState(""); const [compImportMsg, setCompImportMsg] = useState("");
+  const [outreach, setOutreach] = useState({ open: false, supplier: null, lang: "en", loading: false, error: "", subject: "", body: "", copied: "" });
 
   useEffect(() => {
     let on = true;
@@ -448,6 +460,38 @@ export default function SupplierScout() {
 
   const toggleCert = (c) => setSelectedCerts((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]));
   const benchPrice = firstNum(benchmark.fobUsd);
+
+  function buildOutreachPrompt(s, lang) {
+    const pt = PRODUCT_TYPES.find((p) => p.id === productType);
+    const specs = []; if (gsm) specs.push(`GSM ~${gsm}`); if (denier) specs.push(`denier ~${denier}`); if (laminated) specs.push("laminado"); if (printed) specs.push("con impresión");
+    const prod = s.products && s.products.length ? s.products.join(", ") : (pt ? pt.label : "sacos de polipropileno tejido");
+    return [
+      `Proveedor destino: "${s.company}"${!isEmpty(s.country) ? ` (${s.country})` : ""}${!isEmpty(s.city) ? `, ${s.city}` : ""}.`,
+      `Producto de interés: ${prod}.`,
+      specs.length ? `Especificaciones: ${specs.join(", ")}.` : null,
+      targetMOQ ? `Volumen / MOQ objetivo: ${targetMOQ}.` : null,
+      selectedCerts.length ? `Certificaciones requeridas: ${selectedCerts.join(", ")}.` : null,
+      `Remitente: Megacostales / Ganaplus, comprador industrial en México.`,
+      `Pide explícitamente: precio FOB por unidad, MOQ, lead time, disponibilidad de muestras y certificado de origen TIPAT/CPTPP.`,
+      `Idioma del correo: ${lang === "en" ? "inglés" : "español"}. Devuelve SOLO {"subject":"","body":""}.`,
+    ].filter(Boolean).join("\n");
+  }
+  async function runOutreach(supplier, lang) {
+    setOutreach((o) => ({ ...o, open: true, supplier, lang, loading: true, error: "", subject: "", body: "", copied: "" }));
+    try {
+      const text = await callClaudeText(OUTREACH_SYSTEM_PROMPT, buildOutreachPrompt(supplier, lang), 1500);
+      const parsed = robustParse(text, "_") || {};
+      const subject = parsed.subject || "";
+      const body = parsed.body || (subject ? "" : text.trim());
+      setOutreach((o) => ({ ...o, loading: false, subject, body }));
+    } catch (e) { setOutreach((o) => ({ ...o, loading: false, error: e.message || "No se pudo generar el correo." })); }
+  }
+  const openOutreach = (supplier) => runOutreach(supplier, outreach.lang || "en");
+  const closeOutreach = () => setOutreach((o) => ({ ...o, open: false }));
+  async function copyOut(field) {
+    const txt = field === "subject" ? outreach.subject : field === "body" ? outreach.body : `${outreach.subject}\n\n${outreach.body}`;
+    try { await navigator.clipboard.writeText(txt); setOutreach((o) => ({ ...o, copied: field })); setTimeout(() => setOutreach((o) => ({ ...o, copied: "" })), 1500); } catch (_) {}
+  }
 
   function buildUserPrompt(exclude) {
     const pt = PRODUCT_TYPES.find((p) => p.id === productType); const co = COUNTRIES.find((c) => c.id === country);
@@ -619,7 +663,7 @@ export default function SupplierScout() {
                   <div className="flex flex-wrap gap-1.5 mt-3"><span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border ${og.cls}`}>{og.icon && <Check size={11} />}{og.label}</span>{(s.certifications || []).filter((c) => !/tipat|cptpp|origen/i.test(c)).slice(0, 4).map((c, i) => (<span key={i} className="text-[11px] border border-neutral-700 text-neutral-400 px-2 py-0.5 rounded">{c}</span>))}</div>
                   {mech && <div className="flex items-center gap-1.5 mt-2 text-[11px] text-neutral-500"><FileBadge size={11} /> Cert. origen: {mech}</div>}
                   {renderDeltas(s)}
-                  <div className="flex items-center gap-3 mt-4 pt-3 border-t border-neutral-800 text-xs">{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-neutral-400 hover:text-red-400"><Globe size={13} /> Web</a>}{!isEmpty(s.email) && <a href={`mailto:${s.email}`} className="inline-flex items-center gap-1 text-neutral-400 hover:text-red-400"><Mail size={13} /> Email</a>}{!isEmpty(s.phone) && <span className="inline-flex items-center gap-1 text-neutral-500"><Phone size={13} /> {s.phone}</span>}<div className="flex-1" />{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-red-500 hover:text-red-400 font-medium">Fuente <ExternalLink size={12} /></a>}</div>
+                  <div className="flex items-center gap-3 mt-4 pt-3 border-t border-neutral-800 text-xs">{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-neutral-400 hover:text-red-400"><Globe size={13} /> Web</a>}{!isEmpty(s.email) && <a href={`mailto:${s.email}`} className="inline-flex items-center gap-1 text-neutral-400 hover:text-red-400"><Mail size={13} /> Email</a>}{!isEmpty(s.phone) && <span className="inline-flex items-center gap-1 text-neutral-500"><Phone size={13} /> {s.phone}</span>}<button onClick={() => openOutreach(s)} className="inline-flex items-center gap-1 text-neutral-400 hover:text-red-400"><Sparkles size={13} /> Correo IA</button><div className="flex-1" />{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-red-500 hover:text-red-400 font-medium">Fuente <ExternalLink size={12} /></a>}</div>
                 </div>); })}</div>)}
             </>)}
             {!loading && hasSearched && suppliers.length === 0 && !error && (<div className="text-center py-12 text-neutral-500 text-sm"><Building2 size={28} className="mx-auto mb-3 text-neutral-700" />No se encontraron proveedores verificables. Prueba otro país o quita filtros.</div>)}
@@ -635,7 +679,7 @@ export default function SupplierScout() {
               <div className="space-y-3">{repoDisplayed.map((r) => { const og = originStyle(r.cptppOrigin); const web = normalizeUrl(r.website); const src = normalizeUrl(r.sourceUrl); const mech = certMechanismFor(r.country); return (
                 <div key={r.id} className={`bg-neutral-900/60 border rounded-xl p-4 ${r.potential === "yes" ? "border-emerald-600/40" : r.potential === "no" ? "border-neutral-800 opacity-70" : "border-neutral-800"}`}>
                   <div className="flex items-start gap-3"><span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded border ${scoreColor(r.affinityScore)}`}>{r.affinityScore ?? "—"}</span><div className="flex-1 min-w-0"><h3 className={`font-semibold text-neutral-100 leading-tight truncate ${r.potential === "no" ? "line-through text-neutral-400" : ""}`}>{r.company}</h3><div className="flex items-center gap-1.5 text-xs text-neutral-500 mt-0.5"><MapPin size={11} />{!isEmpty(r.country) && <span className="text-neutral-400">{r.country}</span>}<span>{[r.city, r.province].filter((x) => !isEmpty(x)).join(", ")}</span></div></div><button onClick={() => commitRepo(repo.filter((x) => x.id !== r.id))} title="Eliminar" className="shrink-0 text-neutral-600 hover:text-red-400 transition-colors p-1"><Trash2 size={15} /></button></div>
-                  <div className="flex flex-wrap items-center gap-1.5 mt-3"><span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border ${og.cls}`}>{og.icon && <Check size={11} />}{og.label}</span>{mech && <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500"><FileBadge size={10} /> {mech}</span>}{(() => { const np = supplierNearestPort(r); return np ? <span className="inline-flex items-center gap-1 text-[11px] text-sky-300/80"><Anchor size={10} /> {np.port.name} ~{Math.round(np.dist)} km</span> : null; })()}{!isEmpty(r.nearestPort) && <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500"><Anchor size={10} /> {r.nearestPort}</span>}{!isEmpty(r.indicativeFobUsd) && <span className="text-[11px] text-neutral-500">FOB: {r.indicativeFobUsd}</span>}<div className="flex-1" />{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Globe size={11} /> Web</a>}{!isEmpty(r.email) && <a href={`mailto:${r.email}`} className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Mail size={11} /> Email</a>}{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-400">Fuente <ExternalLink size={10} /></a>}</div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-3"><span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border ${og.cls}`}>{og.icon && <Check size={11} />}{og.label}</span>{mech && <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500"><FileBadge size={10} /> {mech}</span>}{(() => { const np = supplierNearestPort(r); return np ? <span className="inline-flex items-center gap-1 text-[11px] text-sky-300/80"><Anchor size={10} /> {np.port.name} ~{Math.round(np.dist)} km</span> : null; })()}{!isEmpty(r.nearestPort) && <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500"><Anchor size={10} /> {r.nearestPort}</span>}{!isEmpty(r.indicativeFobUsd) && <span className="text-[11px] text-neutral-500">FOB: {r.indicativeFobUsd}</span>}<div className="flex-1" />{web && <a href={web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Globe size={11} /> Web</a>}{!isEmpty(r.email) && <a href={`mailto:${r.email}`} className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Mail size={11} /> Email</a>}<button onClick={() => openOutreach(r)} className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-red-400"><Sparkles size={11} /> Correo IA</button>{src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-red-500 hover:text-red-400">Fuente <ExternalLink size={10} /></a>}</div>
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 pt-3 border-t border-neutral-800">
                     <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-wider text-neutral-600 mr-0.5">Potencial</span><SegBtn active={(r.potential || "unset") === "unset"} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, potential: "unset" } : x))} color="bg-neutral-700 border-neutral-600 text-neutral-100">Sin evaluar</SegBtn><SegBtn active={r.potential === "yes"} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, potential: "yes" } : x))} color="bg-emerald-600 border-emerald-600 text-white">Con potencial</SegBtn><SegBtn active={r.potential === "no"} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, potential: "no" } : x))} color="bg-neutral-600 border-neutral-600 text-neutral-200">Descartado</SegBtn></div>
                     <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-wider text-neutral-600 mr-0.5">Contacto</span><SegBtn active={!r.contacted} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, contacted: false } : x))} color="bg-neutral-700 border-neutral-600 text-neutral-100">No contactado</SegBtn><SegBtn active={r.contacted} onClick={() => commitRepo(repo.map((x) => x.id === r.id ? { ...x, contacted: true } : x))} color="bg-red-600 border-red-600 text-white">Contactado</SegBtn></div>
@@ -697,6 +741,44 @@ export default function SupplierScout() {
           </>
         )}
       </div>
+      {outreach.open && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={closeOutreach}>
+          <div className="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-auto p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2"><Sparkles size={18} className="text-red-500" /><h3 className="font-semibold text-neutral-100 leading-tight">Correo de cotización · {outreach.supplier?.company}</h3></div>
+              <button onClick={closeOutreach} className="text-neutral-500 hover:text-neutral-200 shrink-0"><X size={18} /></button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="text-[11px] text-neutral-500">Idioma:</span>
+              <div className="flex gap-1 bg-neutral-950 border border-neutral-800 rounded-lg p-0.5">
+                <button onClick={() => runOutreach(outreach.supplier, "en")} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${outreach.lang === "en" ? "bg-neutral-100 text-neutral-900" : "text-neutral-400 hover:text-neutral-200"}`}>English</button>
+                <button onClick={() => runOutreach(outreach.supplier, "es")} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${outreach.lang === "es" ? "bg-neutral-100 text-neutral-900" : "text-neutral-400 hover:text-neutral-200"}`}>Español</button>
+              </div>
+              <button onClick={() => runOutreach(outreach.supplier, outreach.lang)} disabled={outreach.loading} className="inline-flex items-center gap-1.5 text-xs text-neutral-300 border border-neutral-700 rounded-lg px-2.5 py-1 hover:border-neutral-500 disabled:opacity-50"><RotateCw size={13} /> Regenerar</button>
+            </div>
+            {outreach.loading ? (
+              <div className="text-center py-12 text-neutral-500 text-sm"><Loader2 size={24} className="animate-spin text-red-500 mx-auto mb-2" />Redactando correo…</div>
+            ) : outreach.error ? (
+              <div className="bg-red-950/40 border border-red-900/60 rounded-lg p-3 text-sm text-red-300 flex items-start gap-2"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><span>{outreach.error}</span></div>
+            ) : (
+              <>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500">Asunto</label>
+                <div className="flex gap-2 mt-1 mb-3">
+                  <input value={outreach.subject} onChange={(e) => setOutreach((o) => ({ ...o, subject: e.target.value }))} className="flex-1 bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-100 focus:border-red-600 focus:outline-none" />
+                  <button onClick={() => copyOut("subject")} className="text-xs border border-neutral-700 rounded-lg px-2.5 hover:border-neutral-500 inline-flex items-center gap-1 text-neutral-300"><Copy size={13} />{outreach.copied === "subject" ? "✓" : ""}</button>
+                </div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500">Mensaje</label>
+                <textarea value={outreach.body} onChange={(e) => setOutreach((o) => ({ ...o, body: e.target.value }))} rows={12} className="w-full mt-1 bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-100 leading-relaxed focus:border-red-600 focus:outline-none" />
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <button onClick={() => copyOut("all")} className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-900 px-3 py-1.5 rounded-lg hover:bg-white transition-colors"><Copy size={14} /> {outreach.copied === "all" ? "Copiado ✓" : "Copiar todo"}</button>
+                  {!isEmpty(outreach.supplier?.email) && <a href={`mailto:${outreach.supplier.email}?subject=${encodeURIComponent(outreach.subject)}&body=${encodeURIComponent(outreach.body)}`} className="inline-flex items-center gap-1.5 text-xs font-medium border border-neutral-700 text-neutral-300 px-3 py-1.5 rounded-lg hover:border-neutral-500 transition-colors"><Mail size={14} /> Abrir en correo</a>}
+                </div>
+                <p className="text-[11px] text-neutral-600 mt-3">Revísalo y edítalo antes de enviar — la IA puede equivocarse en datos del proveedor.</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
