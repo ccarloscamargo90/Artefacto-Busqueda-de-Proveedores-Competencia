@@ -17,13 +17,15 @@ Componente React (`src/SupplierScout.tsx`) con tres módulos en pestañas:
    filtros por país/specs/MOQ/certificaciones, y comparación contra un *benchmark*
    (tu proveedor actual): deltas de precio, origen y logística.
    - **Mapa mundial** (vista Lista/Mapa): ubica a cada proveedor sobre el mapa,
-     coloreado por país y dimensionado por score.
+     coloreado por país y dimensionado por score. Punto sólido = ubicación exacta;
+     punteado = aproximada (centroide del país).
    - **Puerto más cercano**: para cada proveedor se calcula el puerto de exportación
      más cercano (base curada de puertos del bloque TIPAT) con su distancia en km;
      en el mapa se dibuja una línea al puerto. Se incluye en la tarjeta y en el CSV.
 2. **Repositorio** — guarda proveedores, marca potencial/contactado, añade notas y
-   exporta a CSV (con puerto cercano, distancia y coordenadas). Persiste en el
-   almacenamiento del artefacto.
+   exporta a CSV (con puerto cercano, distancia y coordenadas). Incluye también la
+   vista **Lista/Mapa** (mapa mundial de los proveedores guardados, respeta los
+   filtros). Persiste en el almacenamiento del artefacto / la base compartida.
 3. **Competencia MX** — busca y evalúa competidores mexicanos con un *Índice de Fuerza
    Competitiva* (tamaño, alcance, integración, catálogo, web, sofisticación), los clasifica
    en Tiers A/B/C, los muestra en lista o sobre un mapa de México y exporta a CSV.
@@ -33,6 +35,11 @@ Componente React (`src/SupplierScout.tsx`) con tres módulos en pestañas:
      cada competidor; el mapa marca tu planta con anillos de 250/500/1000 km.
    - **Filtros y exportación**: filtro "solo con teléfono" + tier/segmento/estado, y
      CSV con la columna de distancia a tu planta.
+
+**Ver en Google Maps:** en ambos mapas, al hacer **clic en un punto** (proveedor,
+competidor o tu planta) se abre Google Maps con el lugar **señalado**; también hay un
+enlace **Google Maps** en cada tarjeta de la lista. Usa las coordenadas exactas cuando
+existen (pin preciso) y, si no, una búsqueda por nombre + ciudad/estado/país.
 
 ## ⚠️ Importante: tus datos guardados NO están en este código
 
