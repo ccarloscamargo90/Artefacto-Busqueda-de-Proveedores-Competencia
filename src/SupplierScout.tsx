@@ -243,7 +243,36 @@ function robustParse(text, arrKey) {
 // En la app self-hosteada (local con Vite, o en Render/Vercel/etc.) __SELF_HOSTED__ se define en build
 // y la llamada pasa por el proxy /api/anthropic, que inyecta la API key desde el servidor.
 // Dentro del artefacto de Claude.ai esa bandera no existe, así que se llama directo, sin key, como antes.
-const ANTHROPIC_API_URL = (typeof __SELF_HOSTED__ !== "undefined" && __SELF_HOSTED__) ? "/api/anthropic" : "https://api.anthropic.com/v1/messages";
+const SELF_HOSTED = typeof __SELF_HOSTED__ !== "undefined" && __SELF_HOSTED__;
+const ANTHROPIC_API_URL = SELF_HOSTED ? "/api/anthropic" : "https://api.anthropic.com/v1/messages";
+// Mapea cada lista a su colección en el servidor (sincronización por-registro).
+const COLL = { [STORAGE_KEY]: "repo", [KEY_COMP]: "competitors" };
+// Lee la colección compartida del servidor. Devuelve { shared, records } o { shared:false }.
+async function fetchCollection(name) {
+  if (!SELF_HOSTED) return { shared: false };
+  try {
+    const r = await fetch(`/api/collection/${name}`);
+    if (r.ok) { const j = await r.json(); if (j && j.shared) return { shared: true, records: Array.isArray(j.records) ? j.records : [] }; }
+  } catch (_) {}
+  return { shared: false };
+}
+// Envía upserts (registros tocados) y deletes (ids borrados) al servidor; fusión por id.
+function syncCollection(name, upserts, deletes) {
+  if (!SELF_HOSTED) return;
+  if ((!upserts || !upserts.length) && (!deletes || !deletes.length)) return;
+  fetch(`/api/collection/${name}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ upserts: upserts || [], deletes: deletes || [] }) }).catch(() => {});
+}
+// Diff entre el array previo y el nuevo: registros nuevos/cambiados y ids eliminados.
+// Nota: `Map` está importado de lucide-react (el ícono) y NO es el Map global, así que
+// aquí se usan un objeto plano y Set (que sí es global) para indexar por id.
+function diffRecords(prev, next) {
+  const prevById = Object.create(null);
+  prev.forEach((r) => { if (r && r.id != null) prevById[r.id] = r; });
+  const nextIds = new Set(next.map((r) => r.id));
+  const upserts = next.filter((r) => { const p = prevById[r.id]; return !p || JSON.stringify(p) !== JSON.stringify(r); });
+  const deletes = prev.filter((r) => !nextIds.has(r.id)).map((r) => r.id);
+  return { upserts, deletes };
+}
 async function callClaude(systemPrompt, userPrompt, arrKey, maxTokens = 4000) {
   const res = await fetch(ANTHROPIC_API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], tools: [{ type: "web_search_20260209", name: "web_search" }] }) });
   let data; try { data = await res.json(); } catch (_) { throw new Error(`La API respondió ${res.status} y no se pudo leer. Reintenta.`); }
@@ -417,6 +446,8 @@ export default function SupplierScout() {
 
   const [repo, setRepo] = useState([]); const [repoLoaded, setRepoLoaded] = useState(false);
   const repoRef = useRef([]);
+  const [sharedMode, setSharedMode] = useState(false); const sharedRef = useRef(false);
+  const dirtyRepoRef = useRef(new Set()); const dirtyCompRef = useRef(new Set());
   const [repoFilterPot, setRepoFilterPot] = useState("all"); const [repoFilterContacted, setRepoFilterContacted] = useState("all"); const [repoFilterCountry, setRepoFilterCountry] = useState("all");
   const [confirmClear, setConfirmClear] = useState(false);
 
@@ -435,13 +466,50 @@ export default function SupplierScout() {
   const [outreach, setOutreach] = useState({ open: false, supplier: null, lang: "en", loading: false, error: "", subject: "", body: "", copied: "" });
   const [enrich, setEnrich] = useState({ open: false, supplier: null, loading: false, error: "", data: null, savedMsg: "" });
 
+  // Carga una lista: en modo compartido lee la colección por-registro del servidor
+  // (migrando una sola vez el blob anterior si la colección está vacía); si no, usa
+  // el blob de window.storage (localStorage o el almacenamiento del artefacto).
+  async function loadList(storageKey, setList, ref) {
+    const coll = await fetchCollection(COLL[storageKey]);
+    if (coll.shared) {
+      sharedRef.current = true; setSharedMode(true);
+      let records = coll.records;
+      if (records.length === 0) {
+        try { const r = await window.storage.get(storageKey); const blob = r && r.value ? JSON.parse(r.value) : []; if (Array.isArray(blob) && blob.length) { records = blob; syncCollection(COLL[storageKey], blob, []); } } catch (_) {}
+      }
+      setList(records); ref.current = records;
+      return;
+    }
+    try { const r = await window.storage.get(storageKey); const p = r && r.value ? JSON.parse(r.value) : []; if (Array.isArray(p)) { setList(p); ref.current = p; } } catch (_) {}
+  }
+
   useEffect(() => {
     let on = true;
     (async () => {
-      try { const r = await window.storage.get(STORAGE_KEY); const p = r && r.value ? JSON.parse(r.value) : []; if (on && Array.isArray(p)) { setRepo(p); repoRef.current = p; } } catch (_) {} finally { if (on) setRepoLoaded(true); }
-      try { const r2 = await window.storage.get(KEY_COMP); const p2 = r2 && r2.value ? JSON.parse(r2.value) : []; if (on && Array.isArray(p2)) { setCompetitors(p2); compRef.current = p2; } } catch (_) {} finally { if (on) setCompLoaded(true); }
+      try { await loadList(STORAGE_KEY, (v) => { if (on) setRepo(v); }, repoRef); } catch (_) {} finally { if (on) setRepoLoaded(true); }
+      try { await loadList(KEY_COMP, (v) => { if (on) setCompetitors(v); }, compRef); } catch (_) {} finally { if (on) setCompLoaded(true); }
     })();
     return () => { on = false; };
+  }, []);
+
+  // En modo compartido, al volver a la pestaña/ventana se refresca desde el servidor
+  // para ver los cambios del resto del equipo (antes se vuelcan los cambios pendientes).
+  useEffect(() => {
+    if (!SELF_HOSTED) return;
+    let busy = false;
+    async function refresh() {
+      if (!sharedRef.current || busy || document.hidden) return;
+      busy = true;
+      try {
+        persistNow(); persistCompNow();
+        const [a, b] = await Promise.all([fetchCollection("repo"), fetchCollection("competitors")]);
+        if (a.shared) { setRepo(a.records); repoRef.current = a.records; }
+        if (b.shared) { setCompetitors(b.records); compRef.current = b.records; }
+      } catch (_) {} finally { busy = false; }
+    }
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
   }, []);
 
   useEffect(() => {
@@ -451,17 +519,17 @@ export default function SupplierScout() {
     return () => window.removeEventListener("keydown", onKey);
   }, [outreach.open, enrich.open]);
 
-  function commitRepo(next) { setRepo(next); repoRef.current = next; window.storage.set(STORAGE_KEY, JSON.stringify(next)).catch(() => {}); }
-  function patchLocal(id, patch) { setRepo((prev) => { const next = prev.map((r) => (r.id === id ? { ...r, ...patch } : r)); repoRef.current = next; return next; }); }
-  function persistNow() { window.storage.set(STORAGE_KEY, JSON.stringify(repoRef.current)).catch(() => {}); }
+  function commitRepo(next) { const prev = repoRef.current; setRepo(next); repoRef.current = next; if (sharedRef.current) { const { upserts, deletes } = diffRecords(prev, next); syncCollection("repo", upserts, deletes); } else { window.storage.set(STORAGE_KEY, JSON.stringify(next)).catch(() => {}); } }
+  function patchLocal(id, patch) { dirtyRepoRef.current.add(id); setRepo((prev) => { const next = prev.map((r) => (r.id === id ? { ...r, ...patch } : r)); repoRef.current = next; return next; }); }
+  function persistNow() { if (sharedRef.current) { const ids = dirtyRepoRef.current; if (!ids.size) return; const ups = repoRef.current.filter((r) => ids.has(r.id)); dirtyRepoRef.current = new Set(); syncCollection("repo", ups, []); } else { window.storage.set(STORAGE_KEY, JSON.stringify(repoRef.current)).catch(() => {}); } }
   function addToRepo(list) { const ex = new Set(repoRef.current.map((r) => r.id)); const ad = []; list.forEach((s) => { const id = makeId(s); if (s.company && !ex.has(id)) { ad.push({ id, ...s, potential: "unset", contacted: false, notes: "", savedAt: Date.now() }); ex.add(id); } }); if (ad.length) commitRepo([...ad, ...repoRef.current]); return ad.length; }
   const isInRepo = (s) => repo.some((r) => r.id === makeId(s));
   function toggleRepoOne(s) { const id = makeId(s); if (repo.some((r) => r.id === id)) commitRepo(repo.filter((r) => r.id !== id)); else addToRepo([s]); }
   function saveAllToRepo() { const n = addToRepo(suppliers); setAddedMsg(n > 0 ? `${n} agregado(s)` : "Ya estaban guardados"); setTimeout(() => setAddedMsg(""), 2500); }
 
-  function commitComp(next) { setCompetitors(next); compRef.current = next; window.storage.set(KEY_COMP, JSON.stringify(next)).catch(() => {}); }
-  function patchCompLocal(id, patch) { setCompetitors((prev) => { const next = prev.map((r) => (r.id === id ? { ...r, ...patch } : r)); compRef.current = next; return next; }); }
-  function persistCompNow() { window.storage.set(KEY_COMP, JSON.stringify(compRef.current)).catch(() => {}); }
+  function commitComp(next) { const prev = compRef.current; setCompetitors(next); compRef.current = next; if (sharedRef.current) { const { upserts, deletes } = diffRecords(prev, next); syncCollection("competitors", upserts, deletes); } else { window.storage.set(KEY_COMP, JSON.stringify(next)).catch(() => {}); } }
+  function patchCompLocal(id, patch) { dirtyCompRef.current.add(id); setCompetitors((prev) => { const next = prev.map((r) => (r.id === id ? { ...r, ...patch } : r)); compRef.current = next; return next; }); }
+  function persistCompNow() { if (sharedRef.current) { const ids = dirtyCompRef.current; if (!ids.size) return; const ups = compRef.current.filter((r) => ids.has(r.id)); dirtyCompRef.current = new Set(); syncCollection("competitors", ups, []); } else { window.storage.set(KEY_COMP, JSON.stringify(compRef.current)).catch(() => {}); } }
   function addToComp(list) { const ex = new Set(compRef.current.map((r) => r.id)); const ad = []; list.forEach((s) => { const id = makeId(s); if (s.company && !ex.has(id)) { ad.push({ id, ...s, userNotes: "", savedAt: Date.now() }); ex.add(id); } }); if (ad.length) commitComp([...ad, ...compRef.current]); return ad.length; }
   const isInComp = (s) => competitors.some((r) => r.id === makeId(s));
   function toggleCompOne(s) { const id = makeId(s); if (competitors.some((r) => r.id === id)) commitComp(competitors.filter((r) => r.id !== id)); else addToComp([s]); }
@@ -672,7 +740,7 @@ export default function SupplierScout() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans">
       <div className="max-w-6xl mx-auto px-5 py-8">
-        <div className="flex items-center gap-3 mb-5"><div className="h-10 w-10 rounded-lg bg-red-600 flex items-center justify-center shadow-lg shadow-red-900/40"><Package size={20} className="text-white" /></div><div><h1 className="text-xl font-bold tracking-tight leading-none">Supplier Scout <span className="text-red-500">·</span> TIPAT</h1><p className="text-xs text-neutral-500 mt-1">Megacostales / Ganaplus — abastecimiento, repositorio e inteligencia de competencia</p></div></div>
+        <div className="flex items-center gap-3 mb-5"><div className="h-10 w-10 rounded-lg bg-red-600 flex items-center justify-center shadow-lg shadow-red-900/40"><Package size={20} className="text-white" /></div><div><h1 className="text-xl font-bold tracking-tight leading-none">Supplier Scout <span className="text-red-500">·</span> TIPAT</h1><p className="text-xs text-neutral-500 mt-1">Megacostales / Ganaplus — abastecimiento, repositorio e inteligencia de competencia</p></div><div className="flex-1" />{sharedMode && <span title="Repositorio y competencia se guardan en la base de datos del equipo (se sincronizan entre todos)." className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-full"><Database size={12} /> Datos compartidos</span>}</div>
 
         <div className="flex flex-wrap gap-1 mb-6 bg-neutral-900/60 border border-neutral-800 rounded-lg p-1 w-fit">
           <button onClick={() => setTab("search")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === "search" ? "bg-red-600 text-white" : "text-neutral-400 hover:text-neutral-200"}`}><Search size={15} /> Buscar</button>

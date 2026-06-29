@@ -100,12 +100,17 @@ app.post("/api/anthropic", express.json({ limit: "1mb" }), async (req, res) => {
 // de datos y lo comparte todo el equipo. Si no, el cliente usa localStorage.
 let pool = null, dbReady = false;
 const KV_KEY_RE = /^intergranel-[a-z0-9-]+$/; // solo las claves de la app
+const COLL_NAME_RE = /^(repo|competitors)$/;  // colecciones permitidas (sincronización granular)
+const MAX_BATCH = 5000;                        // tope de registros por petición POST
 async function initDb() {
   if (!process.env.DATABASE_URL) return;
   pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 });
   pool.on("error", (e) => { console.error("pg pool idle error:", e.message); dbReady = false; });
   try {
     await pool.query("CREATE TABLE IF NOT EXISTS kv (key text PRIMARY KEY, value text NOT NULL, updated_at timestamptz DEFAULT now())");
+    // Tabla por-registro: cada proveedor/competidor es una fila propia, de modo que dos
+    // personas que editan registros distintos NO se pisan (a diferencia del blob de kv).
+    await pool.query("CREATE TABLE IF NOT EXISTS collection (name text NOT NULL, id text NOT NULL, value text NOT NULL, updated_at timestamptz DEFAULT now(), PRIMARY KEY (name, id))");
     dbReady = true;
     console.log("Base de datos conectada: almacenamiento compartido ACTIVO.");
   } catch (e) {
@@ -132,6 +137,46 @@ app.put("/api/kv/:key", express.json({ limit: "6mb" }), async (req, res) => {
     await pool.query("INSERT INTO kv(key,value,updated_at) VALUES($1,$2,now()) ON CONFLICT(key) DO UPDATE SET value=$2, updated_at=now()", [req.params.key, value]);
     res.json({ shared: true });
   } catch (e) { console.error("kv put:", e.message); res.json({ shared: false }); }
+});
+
+// Sincronización por-registro (evita el last-write-wins del blob): el cliente lee la
+// colección completa al cargar/volver, y al editar manda solo los registros tocados
+// (upserts) y los ids borrados (deletes); el servidor los fusiona por id.
+app.get("/api/collection/:name", async (req, res) => {
+  if (!dbReady) return res.json({ shared: false });
+  if (!COLL_NAME_RE.test(req.params.name)) return res.status(400).json({ shared: false, error: "colección no permitida" });
+  try {
+    const r = await pool.query("SELECT value FROM collection WHERE name=$1", [req.params.name]);
+    const records = r.rows.map((row) => { try { return JSON.parse(row.value); } catch { return null; } }).filter(Boolean);
+    res.json({ shared: true, records });
+  } catch (e) { console.error("collection get:", e.message); res.json({ shared: false }); }
+});
+app.post("/api/collection/:name", express.json({ limit: "8mb" }), async (req, res) => {
+  if (!dbReady) return res.json({ shared: false });
+  if (!COLL_NAME_RE.test(req.params.name)) return res.status(400).json({ shared: false, error: "colección no permitida" });
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const upserts = Array.isArray(body.upserts) ? body.upserts : [];
+  const deletes = Array.isArray(body.deletes) ? body.deletes : [];
+  if (upserts.length + deletes.length > MAX_BATCH) return res.status(413).json({ shared: false, error: "lote demasiado grande" });
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+    for (const rec of upserts) {
+      if (!rec || typeof rec.id !== "string" || !rec.id) continue;
+      await client.query("INSERT INTO collection(name,id,value,updated_at) VALUES($1,$2,$3,now()) ON CONFLICT(name,id) DO UPDATE SET value=$3, updated_at=now()", [req.params.name, rec.id, JSON.stringify(rec)]);
+    }
+    for (const id of deletes) {
+      if (typeof id !== "string" || !id) continue;
+      await client.query("DELETE FROM collection WHERE name=$1 AND id=$2", [req.params.name, id]);
+    }
+    await client.query("COMMIT");
+    res.json({ shared: true });
+  } catch (e) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
+    console.error("collection post:", e.message);
+    res.json({ shared: false });
+  } finally { if (client) client.release(); }
 });
 
 // Frontend compilado + fallback SPA

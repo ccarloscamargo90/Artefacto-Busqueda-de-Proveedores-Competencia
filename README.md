@@ -144,13 +144,20 @@ compartido sin más pasos.
 3. En tu web service → **Environment** → agrega `DATABASE_URL` con ese valor → guarda (redepliega).
 
 Al arrancar verás en los logs `Base de datos conectada: almacenamiento compartido ACTIVO`. La app
-crea sola la tabla `kv`. Si la base no está disponible, vuelve a `localStorage` automáticamente
-(no se rompe nada).
+crea sola las tablas `kv` y `collection`. Si la base no está disponible, vuelve a `localStorage`
+automáticamente (no se rompe nada). Cuando el modo compartido está activo, la app muestra una
+insignia **Datos compartidos** en la cabecera.
 
-> Notas: el Postgres **free** de Render caduca a los ~30 días (respalda con el botón **CSV**). La
-> escritura es *last-write-wins* sobre el conjunto completo (suficiente para un equipo pequeño;
-> si dos personas guardan a la vez, gana la última). El acceso a los datos queda protegido por el
-> mismo login (`APP_PASSWORD`) si lo activaste.
+**Sincronización por-registro (sin pisarse):** cada proveedor/competidor es una fila propia en la
+tabla `collection`. Al editar, la app manda **solo el registro tocado** (no todo el conjunto), así
+que si dos personas editan registros distintos a la vez, **ningún cambio se pierde**. Al volver a
+la pestaña se refresca desde el servidor para ver lo que hizo el resto del equipo. La primera vez
+que se activa el modo compartido, los datos previos del blob (`kv`) se migran solos a la nueva
+tabla. (Si dos personas editan **el mismo** registro a la vez, gana el último guardado de ese
+registro; los demás registros no se ven afectados.)
+
+> Notas: el Postgres **free** de Render caduca a los ~30 días (respalda con el botón **CSV**). El
+> acceso a los datos queda protegido por el mismo login (`APP_PASSWORD`) si lo activaste.
 
 ## Estructura
 
