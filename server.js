@@ -83,6 +83,11 @@ app.post("/api/anthropic", express.json({ limit: "1mb" }), async (req, res) => {
       body: JSON.stringify(body),
     });
     const text = await upstream.text();
+    if (!upstream.ok) {
+      console.error("Anthropic upstream error", upstream.status, text.slice(0, 500));
+      const msg = upstream.status === 429 ? "Demasiadas solicitudes a la IA. Espera un momento." : "La API de IA devolvió un error. Reintenta.";
+      return res.status(upstream.status).json({ type: "error", error: { message: msg } });
+    }
     res.status(upstream.status).type("application/json").send(text);
   } catch (e) {
     console.error("Proxy error:", e);
@@ -98,6 +103,7 @@ const KV_KEY_RE = /^intergranel-[a-z0-9-]+$/; // solo las claves de la app
 async function initDb() {
   if (!process.env.DATABASE_URL) return;
   pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 });
+  pool.on("error", (e) => { console.error("pg pool idle error:", e.message); dbReady = false; });
   try {
     await pool.query("CREATE TABLE IF NOT EXISTS kv (key text PRIMARY KEY, value text NOT NULL, updated_at timestamptz DEFAULT now())");
     dbReady = true;
@@ -130,7 +136,11 @@ app.put("/api/kv/:key", express.json({ limit: "6mb" }), async (req, res) => {
 
 // Frontend compilado + fallback SPA
 const distDir = path.join(__dirname, "dist");
+app.get("/favicon.ico", (_req, res) => res.status(204).end());
 app.use(express.static(distDir));
 app.get("*", (_req, res) => res.sendFile(path.join(distDir, "index.html")));
 
-app.listen(PORT, () => console.log(`Supplier Scout escuchando en http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Supplier Scout escuchando en http://localhost:${PORT}`);
+  if (!APP_PASSWORD && API_KEY) console.warn("ADVERTENCIA: sin APP_PASSWORD la app y el proxy /api/anthropic quedan ABIERTOS (cualquiera puede gastar tu API key). Define APP_PASSWORD para exigir login.");
+});
