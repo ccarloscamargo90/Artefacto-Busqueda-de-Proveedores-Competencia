@@ -123,7 +123,14 @@ define en Render la variable de entorno **`APP_PASSWORD`** (y opcionalmente `APP
 
 Si no defines `APP_PASSWORD`, la app queda **abierta** (cómodo para probar, pero no para
 dejarla pública). El servidor además ya limita el abuso aunque esté abierta: solo permite el
-modelo `claude-sonnet-4-6`, topa `max_tokens` y aplica un rate-limit por IP.
+modelo `claude-sonnet-4-6`, topa `max_tokens` y aplica **rate-limit por IP** tanto al proxy de
+IA (estricto) como a los endpoints de datos `/api/kv` y `/api/collection` (más holgado). El
+rate-limit reduce el abuso pero **no sustituye al login**: si usas datos compartidos (Postgres),
+sin `APP_PASSWORD` cualquiera con la URL podría leer/escribir/borrar los datos del equipo.
+
+> **Forzar el login (`REQUIRE_LOGIN`)**: si defines `REQUIRE_LOGIN=true` y **no** hay
+> `APP_PASSWORD`, el servidor **no arranca** (falla el deploy con un mensaje claro) en vez de
+> quedar abierto por descuido. Úsalo para garantizar que producción nunca quede sin contraseña.
 
 Notas:
 - El plan **gratis** de Render "duerme" tras inactividad (el primer acceso tarda en

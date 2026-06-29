@@ -17,8 +17,16 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY;
 const APP_PASSWORD = process.env.APP_PASSWORD;        // si se define, exige login en toda la app
 const APP_USER = process.env.APP_USER || "equipo";    // usuario para el login (opcional)
+const REQUIRE_LOGIN = /^(1|true|yes|on)$/i.test(process.env.REQUIRE_LOGIN || ""); // exigir APP_PASSWORD
 const ALLOWED_MODELS = ["claude-sonnet-4-6"];         // modelos permitidos vía el proxy
 const MAX_TOKENS_CAP = 8000;                          // tope de tokens de salida por request
+
+// Si pides exigir login (REQUIRE_LOGIN=true) pero falta APP_PASSWORD, no arranques:
+// es preferible un fallo claro al despliegue a quedar abierto creyendo que está protegido.
+if (REQUIRE_LOGIN && !APP_PASSWORD) {
+  console.error("REQUIRE_LOGIN está activo pero falta APP_PASSWORD. Define APP_PASSWORD (y opcional APP_USER) para exigir login. Abortando.");
+  process.exit(1);
+}
 
 // Cabeceras básicas de seguridad
 app.use((_req, res, next) => {
@@ -48,24 +56,27 @@ if (APP_PASSWORD) {
   });
 }
 
-// Rate limit simple en memoria, por IP, para el proxy
-const WINDOW_MS = 10 * 60 * 1000;
-const MAX_HITS = 40;
-const hits = new Map();
-function rateLimited(ip) {
-  const now = Date.now();
-  const rec = hits.get(ip);
-  if (!rec || now > rec.reset) { hits.set(ip, { count: 1, reset: now + WINDOW_MS }); return false; }
-  rec.count++;
-  return rec.count > MAX_HITS;
+// Rate limit simple en memoria, por IP. Límite estricto para el proxy de IA (gasta
+// tokens/dinero) y otro más holgado para los endpoints de datos (se usan a menudo).
+function makeRateLimiter(windowMs, maxHits) {
+  const hits = new Map();
+  return (ip) => {
+    const now = Date.now();
+    const rec = hits.get(ip);
+    if (!rec || now > rec.reset) { hits.set(ip, { count: 1, reset: now + windowMs }); return false; }
+    rec.count++;
+    return rec.count > maxHits;
+  };
 }
+const aiLimited = makeRateLimiter(10 * 60 * 1000, 40);     // proxy de IA: 40 / 10 min por IP
+const dataLimited = makeRateLimiter(10 * 60 * 1000, 1200); // datos (kv/collection): 1200 / 10 min por IP
 
 // Proxy a la API de Anthropic (con allowlist de modelo y tope de max_tokens)
 app.post("/api/anthropic", express.json({ limit: "1mb" }), async (req, res) => {
   if (!API_KEY) {
     return res.status(500).json({ type: "error", error: { message: "Falta ANTHROPIC_API_KEY en las variables de entorno del servidor." } });
   }
-  if (rateLimited(req.ip)) {
+  if (aiLimited(req.ip)) {
     return res.status(429).json({ type: "error", error: { message: "Demasiadas solicitudes. Espera unos minutos." } });
   }
   const body = req.body && typeof req.body === "object" ? req.body : {};
@@ -121,6 +132,7 @@ async function initDb() {
 initDb();
 
 app.get("/api/kv/:key", async (req, res) => {
+  if (dataLimited(req.ip)) return res.status(429).json({ shared: false, error: "Demasiadas solicitudes. Espera unos minutos." });
   if (!dbReady) return res.json({ shared: false });
   if (!KV_KEY_RE.test(req.params.key)) return res.status(400).json({ shared: false, error: "clave no permitida" });
   try {
@@ -129,6 +141,7 @@ app.get("/api/kv/:key", async (req, res) => {
   } catch (e) { console.error("kv get:", e.message); res.json({ shared: false }); }
 });
 app.put("/api/kv/:key", express.json({ limit: "6mb" }), async (req, res) => {
+  if (dataLimited(req.ip)) return res.status(429).json({ shared: false, error: "Demasiadas solicitudes. Espera unos minutos." });
   if (!dbReady) return res.json({ shared: false });
   if (!KV_KEY_RE.test(req.params.key)) return res.status(400).json({ shared: false, error: "clave no permitida" });
   const value = req.body && typeof req.body.value === "string" ? req.body.value : null;
@@ -143,6 +156,7 @@ app.put("/api/kv/:key", express.json({ limit: "6mb" }), async (req, res) => {
 // colección completa al cargar/volver, y al editar manda solo los registros tocados
 // (upserts) y los ids borrados (deletes); el servidor los fusiona por id.
 app.get("/api/collection/:name", async (req, res) => {
+  if (dataLimited(req.ip)) return res.status(429).json({ shared: false, error: "Demasiadas solicitudes. Espera unos minutos." });
   if (!dbReady) return res.json({ shared: false });
   if (!COLL_NAME_RE.test(req.params.name)) return res.status(400).json({ shared: false, error: "colección no permitida" });
   try {
@@ -152,6 +166,7 @@ app.get("/api/collection/:name", async (req, res) => {
   } catch (e) { console.error("collection get:", e.message); res.json({ shared: false }); }
 });
 app.post("/api/collection/:name", express.json({ limit: "8mb" }), async (req, res) => {
+  if (dataLimited(req.ip)) return res.status(429).json({ shared: false, error: "Demasiadas solicitudes. Espera unos minutos." });
   if (!dbReady) return res.json({ shared: false });
   if (!COLL_NAME_RE.test(req.params.name)) return res.status(400).json({ shared: false, error: "colección no permitida" });
   const body = req.body && typeof req.body === "object" ? req.body : {};
@@ -187,5 +202,11 @@ app.get("*", (_req, res) => res.sendFile(path.join(distDir, "index.html")));
 
 app.listen(PORT, () => {
   console.log(`Supplier Scout escuchando en http://localhost:${PORT}`);
-  if (!APP_PASSWORD && API_KEY) console.warn("ADVERTENCIA: sin APP_PASSWORD la app y el proxy /api/anthropic quedan ABIERTOS (cualquiera puede gastar tu API key). Define APP_PASSWORD para exigir login.");
+  if (!APP_PASSWORD && (API_KEY || process.env.DATABASE_URL)) {
+    const riesgos = [
+      API_KEY ? "el proxy /api/anthropic puede gastar tu API key" : null,
+      process.env.DATABASE_URL ? "los datos compartidos (/api/kv, /api/collection) quedan expuestos a lectura/escritura" : null,
+    ].filter(Boolean).join(" y ");
+    console.warn(`ADVERTENCIA: sin APP_PASSWORD la app queda ABIERTA — ${riesgos}. Define APP_PASSWORD (y opcional APP_USER) para exigir login, o REQUIRE_LOGIN=true para forzar que no arranque sin contraseña. (Hay rate-limit por IP, pero no sustituye al login.)`);
+  }
 });

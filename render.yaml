@@ -18,10 +18,14 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       # Recomendado: define APP_PASSWORD para exigir login (HTTP Basic) en toda la app
-      # y así proteger el proxy /api/anthropic de uso ajeno (que gastaría tu API key).
-      # Opcional: APP_USER (usuario; por defecto "equipo").
+      # y así proteger el proxy /api/anthropic y los datos compartidos (/api/kv,
+      # /api/collection) de uso ajeno. Opcional: APP_USER (usuario; por defecto "equipo").
       - key: APP_PASSWORD
         sync: false
+      # Opcional: REQUIRE_LOGIN=true hace que el servidor NO arranque si falta
+      # APP_PASSWORD (evita publicar sin contraseña por descuido). Descoméntalo para forzarlo:
+      # - key: REQUIRE_LOGIN
+      #   value: "true"
       # Conecta automáticamente la base de datos de arriba (datos compartidos).
       - key: DATABASE_URL
         fromDatabase:
