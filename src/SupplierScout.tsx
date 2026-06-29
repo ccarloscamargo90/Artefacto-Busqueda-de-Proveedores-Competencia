@@ -313,7 +313,7 @@ async function callClaude(systemPrompt, userPrompt, arrKey, maxTokens = 4000) {
   return { list, summary: (parsed && parsed.searchSummary) || "" };
 }
 async function callClaudeText(systemPrompt, userPrompt, maxTokens = 1500, useSearch = false) {
-  const payload = { model: "claude-sonnet-4-6", max_tokens: maxTokens, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] };
+  const payload: any = { model: "claude-sonnet-4-6", max_tokens: maxTokens, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] };
   if (useSearch) payload.tools = [{ type: "web_search_20260209", name: "web_search" }];
   const res = await fetch(ANTHROPIC_API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   let data; try { data = await res.json(); } catch (_) { throw new Error(`La API respondió ${res.status} y no se pudo leer. Reintenta.`); }
@@ -702,7 +702,7 @@ export default function SupplierScout() {
   if (compSort === "score") compDisplayed.sort((a, b) => (hasScores(b) ? compositeScore(b) : -1) - (hasScores(a) ? compositeScore(a) : -1));
   else compDisplayed.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-  const stateCount = {};
+  const stateCount: Record<string, number> = {};
   competitors.forEach((c) => { const k = !isEmpty(c.state) ? c.state : "Sin ubicar"; stateCount[k] = (stateCount[k] || 0) + 1; });
   const stateRanking = Object.entries(stateCount).sort((a, b) => b[1] - a[1]);
   const maxCount = stateRanking.length ? stateRanking[0][1] : 1;
@@ -710,7 +710,7 @@ export default function SupplierScout() {
   const plant = MX_STATES.find((st) => st.n === plantState) || MX_STATES.find((st) => st.n === "Nuevo León");
   function compDistanceKm(c) { const co = getCoords(c); if (!co || !plant) return null; return haversineKm(co.lat, co.lng, plant.lat, plant.lng); }
 
-  const Chip = ({ children, active, onClick, accent }) => (<button onClick={onClick} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? accent ? "bg-red-600 border-red-600 text-white" : "bg-neutral-100 border-neutral-100 text-neutral-900" : "bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"}`}>{children}</button>);
+  const Chip = ({ children, active, onClick, accent = false }) => (<button onClick={onClick} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? accent ? "bg-red-600 border-red-600 text-white" : "bg-neutral-100 border-neutral-100 text-neutral-900" : "bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"}`}>{children}</button>);
   const Label = ({ children }) => (<div className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500 mb-2">{children}</div>);
   const SegBtn = ({ active, onClick, children, color }) => (<button onClick={onClick} className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-colors ${active ? color : "bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-500"}`}>{children}</button>);
   const fieldCls = "w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:border-red-600 focus:outline-none";
