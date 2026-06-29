@@ -213,7 +213,23 @@ function portMatch(a, b) { if (!b || isEmpty(a)) return null; const k = b.toLowe
 function sameCountryAs(a, b) { if (isEmpty(a) || isEmpty(b)) return null; const k = b.toLowerCase().split(/[\s(/]/)[0].trim(); return k ? a.toLowerCase().includes(k) : null; }
 function certMechanismFor(country) { if (isEmpty(country)) return null; if (country.toLowerCase().includes("vietnam")) return "Cert. emitido por autoridad (eCoSys/VCCI)"; return "Auto-certificación (exportador)"; }
 function makeId(s) { const loc = (norm(isEmpty(s.country) ? "" : s.country) || norm(isEmpty(s.state) ? "" : s.state)); return `${norm(s.company).replace(/\s+/g, " ")}|${loc}`; }
-function jitter(id, amt) { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0; const r = (Math.abs(h) % 1000) / 1000 - 0.5; return r * amt; }
+// Separa marcadores que caen sobre (casi) el mismo píxel —típico cuando varios
+// proveedores comparten el centroide de su país— abriéndolos en un anillo alrededor
+// del punto común, para que no se encimen. Muta cada item.p (en píxeles proyectados).
+function spreadOverlaps(placed, cell = 11) {
+  const groups = {};
+  placed.forEach((m) => { const k = Math.round(m.p[0] / cell) + "," + Math.round(m.p[1] / cell); (groups[k] || (groups[k] = [])).push(m); });
+  Object.keys(groups).forEach((k) => {
+    const g = groups[k];
+    if (g.length < 2) return;
+    const cx = g.reduce((s, m) => s + m.p[0], 0) / g.length;
+    const cy = g.reduce((s, m) => s + m.p[1], 0) / g.length;
+    const rmax = g.reduce((s, m) => Math.max(s, m.r || 4), 0);
+    const R = rmax + 3 + g.length * 1.9; // radio del anillo escalado al tamaño y cantidad
+    g.forEach((m, i) => { const a = (i / g.length) * 2 * Math.PI - Math.PI / 2; m.p = [cx + R * Math.cos(a), cy + R * Math.sin(a)]; });
+  });
+  return placed;
+}
 function getCoords(c) {
   const la = num(c.lat), ln = num(c.lng);
   if (la !== null && ln !== null && la > 10 && la < 35 && ln > -120 && ln < -85) return { lat: la, lng: ln, approx: false };
@@ -372,12 +388,12 @@ function MexicoMap({ competitors, plant }) {
   const toPath = (pts) => pts.map((p, i) => { const [x, y] = project(p[0], p[1]); return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`; }).join(" ") + " Z";
   const placed = competitors.map((c) => {
     const co = getCoords(c); if (!co) return null;
-    let lat = co.lat, lng = co.lng;
-    if (co.approx) { lat += jitter(c.id, 0.6); lng += jitter(c.id + "x", 0.6); }
     const sg = SEG_COLORS.find((x) => x.key === segKey(c.segment)) || SEG_COLORS[4];
     const dist = plant ? haversineKm(co.lat, co.lng, plant.lat, plant.lng) : null;
-    return { c, p: project(lat, lng), color: sg.color, label: sg.label, dist, approx: co.approx, r: hasScores(c) ? 4 + (compositeScore(c) / 100) * 9 : 5, big: hasScores(c) && compositeScore(c) >= 65 };
-  }).filter(Boolean).sort((a, b) => b.r - a.r);
+    return { c, p: project(co.lat, co.lng), color: sg.color, label: sg.label, dist, approx: co.approx, r: hasScores(c) ? 5.5 + (compositeScore(c) / 100) * 9 : 6.5, big: hasScores(c) && compositeScore(c) >= 65 };
+  }).filter(Boolean);
+  spreadOverlaps(placed);
+  placed.sort((a, b) => b.r - a.r);
   const pj = plant ? project(plant.lat, plant.lng) : null;
   const ringPx = (km) => (km / 111) * s;
   return (
@@ -387,7 +403,7 @@ function MexicoMap({ competitors, plant }) {
       <path d={toPath(MX_BAJA)} fill="#1e293b" stroke="#64748b" strokeWidth="1.3" strokeLinejoin="round" />
       {pj && [250, 500, 1000].map((km) => (<circle key={"ring" + km} cx={pj[0]} cy={pj[1]} r={ringPx(km)} fill="none" stroke="#ef4444" strokeOpacity="0.28" strokeWidth="1" strokeDasharray="3 3" />))}
       {pj && [250, 500, 1000].map((km) => (<text key={"rl" + km} x={pj[0]} y={Math.max(pad + 8, pj[1] - ringPx(km) - 2)} fontSize="7.5" fill="#fca5a5" textAnchor="middle">{`${km} km`}</text>))}
-      {placed.map(({ c, p, color, label, r, dist, approx }) => { const target = approx ? { company: c.company, city: c.city, state: c.state, country: c.country } : c; const u = gmapsUrl(target); const t = `${c.company} — ${label}${!isEmpty(c.state) ? " · " + c.state : ""}${hasScores(c) ? " · Fuerza " + compositeScore(c) : ""}${dist != null ? " · ~" + Math.round(dist) + " km" : ""}${!isEmpty(c.phone) ? " · " + c.phone : ""}${approx ? " · ubic. aprox." : ""}`; const dot = (<><circle cx={p[0]} cy={p[1]} r={r + 3} fill={color} fillOpacity="0.18" pointerEvents="none" /><circle cx={p[0]} cy={p[1]} r={r} fill={color} fillOpacity={approx ? 0.8 : 0.92} stroke={approx ? "#94a3b8" : "#0b1220"} strokeWidth="1.2" strokeDasharray={approx ? "2 2" : undefined}><title>{t + (u ? " · Abrir en Google Maps" : "")}</title></circle></>); return u ? (<g key={c.id} role="button" tabIndex={0} aria-label={t} onClick={() => openGmaps(target)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGmaps(target); } }} style={{ cursor: "pointer" }}><circle cx={p[0]} cy={p[1]} r={r + 4} fill="transparent" />{dot}</g>) : (<g key={c.id}>{dot}</g>); })}
+      {placed.map(({ c, p, color, label, r, dist, approx }) => { const target = approx ? { company: c.company, city: c.city, state: c.state, country: c.country } : c; const u = gmapsUrl(target); const t = `${c.company} — ${label}${!isEmpty(c.state) ? " · " + c.state : ""}${hasScores(c) ? " · Fuerza " + compositeScore(c) : ""}${dist != null ? " · ~" + Math.round(dist) + " km" : ""}${!isEmpty(c.phone) ? " · " + c.phone : ""}${approx ? " · ubic. aprox." : ""}`; const dot = (<><circle cx={p[0]} cy={p[1]} r={r + 4} fill={color} fillOpacity="0.25" pointerEvents="none" /><circle cx={p[0]} cy={p[1]} r={r} fill={color} fillOpacity={approx ? 0.8 : 0.92} stroke={approx ? "#94a3b8" : "#0b1220"} strokeWidth="1.2" strokeDasharray={approx ? "2 2" : undefined}><title>{t + (u ? " · Abrir en Google Maps" : "")}</title></circle></>); return u ? (<g key={c.id} role="button" tabIndex={0} aria-label={t} onClick={() => openGmaps(target)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGmaps(target); } }} style={{ cursor: "pointer" }}><circle cx={p[0]} cy={p[1]} r={r + 4} fill="transparent" />{dot}</g>) : (<g key={c.id}>{dot}</g>); })}
       {placed.filter((x) => x.big).map(({ c, p, r }) => { const nm = c.company.length > 16 ? c.company.slice(0, 15) + "…" : c.company; const w = nm.length * 5.4 + 4; const flip = p[0] + r + 1 + w > W - pad; return (<g key={c.id + "_l"} pointerEvents="none"><rect x={flip ? p[0] - r - 1 - w : p[0] + r + 1} y={p[1] - 4} width={w} height="12" rx="2" fill="#0b1220" fillOpacity="0.7" /><text x={flip ? p[0] - r - 3 : p[0] + r + 3} y={p[1] + 4.5} fontSize="10" fill="#e2e8f0" textAnchor={flip ? "end" : "start"}>{nm}</text></g>); })}
       {pj && (<g role="button" tabIndex={0} aria-label="Tu planta · Abrir en Google Maps" onClick={() => openGmaps({ company: "Tu planta", lat: plant.lat, lng: plant.lng })} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGmaps({ company: "Tu planta", lat: plant.lat, lng: plant.lng }); } }} style={{ cursor: "pointer" }}><circle cx={pj[0]} cy={pj[1]} r="6" fill="#ef4444" stroke="#0b1220" strokeWidth="1.5"><title>{`Tu planta${plant && plant.n ? " (" + plant.n + ", centro del estado)" : ""} · Abrir en Google Maps`}</title></circle><circle cx={pj[0]} cy={pj[1]} r="2" fill="#fff" pointerEvents="none" /><text x={pj[0]} y={pj[1] - 9} fontSize="10" fill="#fca5a5" textAnchor="middle" stroke="#0b1220" strokeWidth="0.6" paintOrder="stroke" pointerEvents="none">Tu planta</text></g>)}
       <text x={pad} y={H - 6} fontSize="9" fill="#737373" pointerEvents="none">Clic en un punto para abrirlo en Google Maps</text>
@@ -407,8 +423,10 @@ function WorldMap({ suppliers }) {
     const k = countryKey(sup.country); const meta = k ? COUNTRY_META[k] : null;
     const np = nearestPortOf(co.lat, co.lng);
     const score = Number(sup.affinityScore) || 0;
-    return { sup, p: project(co.lat, co.lng), portP: np ? project(np.port.lat, np.port.lng) : null, np, color: meta ? meta.color : "#a3a3a3", r: 4.5 + (score / 100) * 7, approx: co.approx, score };
-  }).filter(Boolean).sort((a, b) => b.r - a.r);
+    return { sup, p: project(co.lat, co.lng), portP: np ? project(np.port.lat, np.port.lng) : null, np, color: meta ? meta.color : "#a3a3a3", r: 5.5 + (score / 100) * 8, approx: co.approx, score };
+  }).filter(Boolean);
+  spreadOverlaps(placed);
+  placed.sort((a, b) => b.r - a.r);
   const vlines = []; for (let lng = -120; lng <= 180; lng += 30) vlines.push(lng);
   const hlines = []; for (let lat = -40; lat <= 60; lat += 20) hlines.push(lat);
   const eq = project(0, 0);
@@ -422,7 +440,7 @@ function WorldMap({ suppliers }) {
       {Object.values(COUNTRY_META).map((m) => { const [x, y] = project(m.lat, m.lng); return <text key={m.label} x={x} y={y} fontSize="8.5" fill="#94a3b8" textAnchor="middle" letterSpacing="0.3">{m.label}</text>; })}
       {PORTS.map((p, i) => { const [x, y] = project(p.lat, p.lng); return (<rect key={"port" + i} x={x - 2.5} y={y - 2.5} width="5" height="5" fill="#38bdf8" fillOpacity="0.7" transform={`rotate(45 ${x} ${y})`}><title>{`Puerto: ${p.name} (${p.country})`}</title></rect>); })}
       {placed.map(({ p, portP }, i) => portP ? <line key={"cn" + i} x1={p[0]} y1={p[1]} x2={portP[0]} y2={portP[1]} stroke="#ef4444" strokeOpacity="0.4" strokeWidth="1" /> : null)}
-      {placed.map(({ sup, p, color, r, np, approx, score }, i) => { const target = approx ? { company: sup.company, city: sup.city, province: sup.province, country: sup.country } : sup; const u = gmapsUrl(target); const t = `${sup.company} — ${sup.country || "país n/d"}${approx ? " (ubic. aprox.)" : ""} · Score ${score}${np ? `\nPuerto cercano: ${np.port.name} (~${Math.round(np.dist)} km)` : ""}${!isEmpty(sup.phone) ? `\nTel: ${sup.phone}` : ""}`; const dot = (<><circle cx={p[0]} cy={p[1]} r={r + 3} fill={color} fillOpacity="0.18" pointerEvents="none" /><circle cx={p[0]} cy={p[1]} r={r} fill={color} fillOpacity={approx ? 0.8 : 0.92} stroke={approx ? "#94a3b8" : "#0b1220"} strokeWidth="1.4" strokeDasharray={approx ? "2 2" : undefined}><title>{t + (u ? "\nAbrir en Google Maps" : "")}</title></circle></>); return u ? (<g key={"sp" + i} role="button" tabIndex={0} aria-label={t.replace(/\n/g, " · ")} onClick={() => openGmaps(target)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGmaps(target); } }} style={{ cursor: "pointer" }}><circle cx={p[0]} cy={p[1]} r={r + 4} fill="transparent" />{dot}</g>) : (<g key={"sp" + i}>{dot}</g>); })}
+      {placed.map(({ sup, p, color, r, np, approx, score }, i) => { const target = approx ? { company: sup.company, city: sup.city, province: sup.province, country: sup.country } : sup; const u = gmapsUrl(target); const t = `${sup.company} — ${sup.country || "país n/d"}${approx ? " (ubic. aprox.)" : ""} · Score ${score}${np ? `\nPuerto cercano: ${np.port.name} (~${Math.round(np.dist)} km)` : ""}${!isEmpty(sup.phone) ? `\nTel: ${sup.phone}` : ""}`; const dot = (<><circle cx={p[0]} cy={p[1]} r={r + 4} fill={color} fillOpacity="0.25" pointerEvents="none" /><circle cx={p[0]} cy={p[1]} r={r} fill={color} fillOpacity={approx ? 0.8 : 0.92} stroke={approx ? "#94a3b8" : "#0b1220"} strokeWidth="1.4" strokeDasharray={approx ? "2 2" : undefined}><title>{t + (u ? "\nAbrir en Google Maps" : "")}</title></circle></>); return u ? (<g key={"sp" + i} role="button" tabIndex={0} aria-label={t.replace(/\n/g, " · ")} onClick={() => openGmaps(target)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGmaps(target); } }} style={{ cursor: "pointer" }}><circle cx={p[0]} cy={p[1]} r={r + 4} fill="transparent" />{dot}</g>) : (<g key={"sp" + i}>{dot}</g>); })}
       {placed.filter((x) => x.score >= 75).map(({ sup, p, r }, i) => { const nm = sup.company.length > 18 ? sup.company.slice(0, 17) + "…" : sup.company; const w = nm.length * 4.9 + 4; const flip = p[0] + r + 1 + w > W - pad; return (<g key={"spl" + i} pointerEvents="none"><rect x={flip ? p[0] - r - 1 - w : p[0] + r + 1} y={p[1] - 4} width={w} height="11" rx="2" fill="#0b1220" fillOpacity="0.7" /><text x={flip ? p[0] - r - 3 : p[0] + r + 3} y={p[1] + 3.5} fontSize="9" fill="#e2e8f0" textAnchor={flip ? "end" : "start"}>{nm}</text></g>); })}
       <text x={pad} y={H - 6} fontSize="9" fill="#737373" pointerEvents="none">Clic en un punto para abrirlo en Google Maps</text>
     </svg>
