@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Package, MapPin, Globe, Mail, Phone, ExternalLink, Download, Check, Loader2, AlertTriangle, Anchor, ShieldCheck, Building2, ChevronDown, Factory, Target, TrendingDown, TrendingUp, RotateCw, FileBadge, Bookmark, BookmarkCheck, Trash2, Database, Inbox, Swords, Tag, Map, List, Gauge, Navigation, Crosshair, Upload, Sparkles, X, Copy, Wand2 } from "lucide-react";
+import { Search, Package, MapPin, Globe, Mail, Phone, ExternalLink, Download, Check, Loader2, AlertTriangle, Anchor, ShieldCheck, Building2, ChevronDown, Factory, Target, TrendingDown, TrendingUp, RotateCw, FileBadge, Bookmark, BookmarkCheck, Trash2, Database, Inbox, Swords, Tag, Map, List, Gauge, Navigation, Crosshair, Upload, Sparkles, X, Copy, Wand2, Plus } from "lucide-react";
 
 const PRODUCT_TYPES = [
   { id: "saco_pp", label: "Saco PP tejido", query: "polypropylene woven bags / PP sacks manufacturer" },
@@ -473,6 +473,7 @@ export default function SupplierScout() {
   const [confirmClear, setConfirmClear] = useState(false); const [repoView, setRepoView] = useState("list");
 
   const [compQuery, setCompQuery] = useState("costales y sacos de polipropileno");
+  const [compUrl, setCompUrl] = useState(""); const [compUrlLoading, setCompUrlLoading] = useState(false); const [compUrlError, setCompUrlError] = useState(null);
   const [compLoading, setCompLoading] = useState(false); const [compError, setCompError] = useState(null); const [compAppending, setCompAppending] = useState(false);
   const [compResults, setCompResults] = useState([]); const [compSummary, setCompSummary] = useState("");
   const [compSearched, setCompSearched] = useState(false); const [compAddedMsg, setCompAddedMsg] = useState("");
@@ -671,6 +672,27 @@ export default function SupplierScout() {
     } catch (e) { setCompError(e.message || "Error."); if (!append) { setCompResults([]); setCompSearched(true); } }
     finally { if (append) setCompAppending(false); else setCompLoading(false); }
   }
+  // Agrega un competidor que el usuario ya conoce a partir de su URL (o nombre): la IA
+  // lo investiga, lo evalúa con el mismo esquema y lo deja en los resultados para guardar.
+  async function addCompByUrl() {
+    const q = compUrl.trim();
+    if (!q) { setCompUrlError("Pega la URL del sitio (o el nombre de la empresa)."); return; }
+    setCompUrlLoading(true); setCompUrlError(null);
+    try {
+      const prompt = `Analiza UNA empresa específica que ya conozco y que es competidor en el mercado MEXICANO de costalería/empaque de polipropileno, a partir de este dato: "${q}". Investígala en la web (su sitio oficial, directorios, Google Maps, redes) y devuelve EXACTAMENTE esa empresa (no sugieras otras) con teléfono, ubicación (estado/ciudad), coordenadas lat/lng aproximadas, segmento, productos y la evaluación de sus dimensiones. Si "${q}" es una URL, úsala como su sitio web y fuente principal. Datos reales y verificables; lo que no encuentres = "no disponible".`;
+      const { list } = await callClaude(COMP_SYSTEM_PROMPT, prompt, "competitors", 3000);
+      const cand = (list || []).filter((c) => c && c.company && c.company.trim());
+      if (!cand.length) { setCompUrlError("No pude identificar la empresa desde ese dato. Revisa la URL o prueba con el nombre."); return; }
+      const seen = new Set([...compResults, ...competitors].map((c) => makeId(c)));
+      const fresh = cand.filter((c) => !seen.has(makeId(c)));
+      if (!fresh.length) { setCompUrlError("Esa empresa ya está en tus resultados o en el directorio."); return; }
+      setCompResults((prev) => [...fresh, ...prev].map((c, i) => ({ ...c, _id: i })));
+      setCompSearched(true);
+      setCompUrl("");
+      setCompAddedMsg(`+${fresh.length} desde URL — revísalo y pulsa Guardar`); setTimeout(() => setCompAddedMsg(""), 4000);
+    } catch (e) { setCompUrlError(e.message || "No se pudo analizar la URL. Reintenta."); }
+    finally { setCompUrlLoading(false); }
+  }
 
   function exportSearchCSV() { const h = ["Empresa", "País", "Ciudad", "Puerto (IA)", "Puerto cercano", "Dist. puerto (km)", "Lat", "Lng", "Productos", "Certificaciones", "Origen TIPAT", "Cert. origen", "FOB USD", "Web", "Email", "Telefono", "Fuente", "Score"]; const rows = displayed.map((s) => { const np = supplierNearestPort(s); const co = getSupplierCoords(s); return [s.company, s.country, s.city, s.nearestPort, np ? np.port.name : "", np ? Math.round(np.dist) : "", co ? co.lat : "", co ? co.lng : "", (s.products || []).join("; "), (s.certifications || []).join("; "), s.cptppOrigin, certMechanismFor(s.country) || "", s.indicativeFobUsd, s.website, s.email, s.phone, s.sourceUrl, s.affinityScore]; }); downloadCsv([h, ...rows], "busqueda_tipat_pp.csv"); }
   const POT_LABEL = { unset: "Sin evaluar", yes: "Con potencial", no: "Descartado" };
@@ -843,6 +865,12 @@ export default function SupplierScout() {
             <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 mb-6">
               <Label>¿Qué competencia buscas?</Label>
               <div className="flex flex-col sm:flex-row gap-3"><input type="text" value={compQuery} onChange={(e) => setCompQuery(e.target.value)} placeholder="ej. costales para azúcar, big bags, sacos para grano…" className={fieldCls} /><button onClick={() => searchComp()} disabled={compLoading} className="shrink-0 inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-lg transition-colors">{compLoading ? <Loader2 size={17} className="animate-spin" /> : <Search size={17} />}{compLoading ? "Analizando…" : "Buscar y evaluar"}</button></div>
+              <div className="mt-4 pt-4 border-t border-neutral-800">
+                <Label>¿Conoces un competidor que falta? Pega su sitio web</Label>
+                <div className="flex flex-col sm:flex-row gap-3"><input type="text" value={compUrl} onChange={(e) => setCompUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addCompByUrl(); }} placeholder="https://empresa-competidora.com  ·  (o el nombre de la empresa)" className={fieldCls} /><button onClick={addCompByUrl} disabled={compUrlLoading} className="shrink-0 inline-flex items-center justify-center gap-2 border border-red-700/60 text-red-300 hover:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold px-6 py-2.5 rounded-lg transition-colors">{compUrlLoading ? <Loader2 size={17} className="animate-spin" /> : <Plus size={17} />}{compUrlLoading ? "Analizando…" : "Analizar y agregar"}</button></div>
+                {compUrlError && <p className="text-[11px] text-red-300 mt-2 flex items-center gap-1.5"><AlertTriangle size={12} /> {compUrlError}</p>}
+                <p className="text-[11px] text-neutral-600 mt-2">La IA lee su sitio y la web, lo evalúa igual que los demás y lo agrega a tus resultados para que lo revises y guardes.</p>
+              </div>
             </div>
             {compLoading && (<div className="text-center py-10 text-neutral-500 text-sm"><Loader2 size={26} className="animate-spin text-red-500 mx-auto mb-3" />Buscando y evaluando competidores mexicanos…<div className="text-xs text-neutral-600 mt-1">Puede tardar ~30 segundos.</div></div>)}
             {compError && !compLoading && (<div className="bg-red-950/40 border border-red-900/60 rounded-xl p-4 mb-6"><div className="flex items-start gap-3 text-sm text-red-300"><AlertTriangle size={18} className="shrink-0 mt-0.5" /><div><div className="font-medium mb-1">No se pudo completar la búsqueda</div><div className="text-red-300/80">{compError}</div></div></div><button onClick={() => searchComp()} className="mt-3 ml-7 inline-flex items-center gap-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg transition-colors"><RotateCw size={13} /> Reintentar</button></div>)}

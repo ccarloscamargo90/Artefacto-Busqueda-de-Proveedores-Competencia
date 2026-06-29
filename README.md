@@ -31,6 +31,9 @@ Componente React (`src/SupplierScout.tsx`) con tres módulos en pestañas:
    en Tiers A/B/C, los muestra en lista o sobre un mapa de México y exporta a CSV.
    - **Más resultados y teléfonos**: hasta 8 empresas por búsqueda, con prioridad
      máxima en extraer el teléfono de contacto.
+   - **Agregar por URL**: ¿conoces un competidor que la búsqueda no trae? Pega su sitio
+     web (o su nombre) y la IA lo investiga, lo evalúa con el mismo esquema y lo agrega a
+     tus resultados para revisarlo y guardarlo — así creces la base por varios frentes.
    - **Distancias a tu planta**: eliges tu estado/planta y se calcula la distancia de
      cada competidor; el mapa marca tu planta con anillos de 250/500/1000 km.
    - **Filtros y exportación**: filtro "solo con teléfono" + tier/segmento/estado, y
