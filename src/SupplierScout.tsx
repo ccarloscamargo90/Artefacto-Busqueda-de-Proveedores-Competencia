@@ -137,7 +137,25 @@ function getSupplierCoords(s) { const la = num(s.lat), ln = num(s.lng); if (la !
 function nearestPortOf(lat, lng) { let best = null; for (const p of PORTS) { const d = haversineKm(lat, lng, p.lat, p.lng); if (!best || d < best.dist) best = { port: p, dist: d }; } return best; }
 function supplierNearestPort(s) { const co = getSupplierCoords(s); if (!co) return null; const np = nearestPortOf(co.lat, co.lng); return np ? { ...np, approx: co.approx } : null; }
 
+// MEMORIA DEL AGENTE — industrias y productos objetivo (saco de polipropileno) para
+// ENFOCAR las búsquedas y evaluaciones. Fuente única de verdad (reutilizable en UI).
+const INDUSTRIES = [
+  { name: "Agricultura y granos", products: "granos y semillas, café/cacao, frutas y hortalizas" },
+  { name: "Fertilizantes y agroquímicos", products: "fertilizante granulado, abonos, agroquímicos sólidos" },
+  { name: "Construcción", products: "cemento/mortero, cal/yeso, agregados, escombro" },
+  { name: "Alimentos (consumo humano)", products: "azúcar/sal, harinas/cereales, legumbres/arroz" },
+  { name: "Alimento balanceado y pecuario", products: "ganado/aves/cerdos, pet food, acuacultura" },
+  { name: "Minería y químicos", products: "minerales/concentrados, sal industrial, químicos en polvo/granulado" },
+  { name: "Reciclaje y manejo de materiales", products: "acopio, plásticos/PET/scrap" },
+  { name: "Empaque a granel (Big Bag / FIBC)", products: "big bags estándar y especiales (liner, baffle, ventilado, antiestático)" },
+  { name: "Tela, rafia y cubiertas PP", products: "tela PP en rollo, lonas/tarpaulin, rafia/hilo" },
+];
+const PRODUCT_FORMS = "saco PP tejido, laminado/BOPP, con válvula, boca abierta, leno/malla (raschel), Big Bag/FIBC, tela PP en rollo, rafia/hilo, lona/tarpaulin";
+const FOCUS_PROMPT = `ENFOQUE DE NEGOCIO (Megacostales / Ganaplus): el producto eje es el SACO DE POLIPROPILENO (PP) para múltiples industrias. Industrias y aplicaciones objetivo — ${INDUSTRIES.map((i) => `${i.name}: ${i.products}`).join("; ")}. Formatos de producto: ${PRODUCT_FORMS}. Usa SIEMPRE estas industrias y formatos para ENFOCAR la búsqueda y la evaluación, e identifica a qué industrias/segmentos de esta lista sirve cada empresa.`;
+
 const SYSTEM_PROMPT = `Eres un investigador de abastecimiento (sourcing) industrial especializado en proveedores de los países miembros del TIPAT/CPTPP. Encuentras FABRICANTES REALES y verificables usando la herramienta de búsqueda web.
+
+${FOCUS_PROMPT}
 
 REGLA ABSOLUTA ANTI-ALUCINACIÓN:
 - Solo incluye un proveedor si encontraste evidencia web real con URL verificable de tus búsquedas.
@@ -157,6 +175,8 @@ IMPORTANTE: Responde un JSON CORTO. Máximo 8 proveedores. Solo el objeto JSON, 
 Devuelve hasta 8 proveedores reales. Si país específico, todos de ese país. Si "todos", prioriza variedad y hubs de PP (Vietnam, Malasia, México). Sé conciso.`;
 
 const COMP_SYSTEM_PROMPT = `Eres un analista de inteligencia competitiva del mercado MEXICANO de costales y sacos de polipropileno (PP). Encuentras y EVALÚAS empresas mexicanas reales que compiten en ese mercado, usando la herramienta de búsqueda web.
+
+${FOCUS_PROMPT}
 
 REGLA ABSOLUTA ANTI-ALUCINACIÓN:
 - Solo incluye una empresa si hay evidencia web real con URL verificable.
