@@ -47,6 +47,12 @@ competidor o tu planta) se abre Google Maps con el lugar **señalado**; también
 enlace **Google Maps** en cada tarjeta de la lista. Usa las coordenadas exactas cuando
 existen (pin preciso) y, si no, una búsqueda por nombre + ciudad/estado/país.
 
+**Enfoque por industria:** el agente lleva en su memoria las industrias objetivo del saco
+de polipropileno (agro, fertilizantes, construcción, alimentos, alimento balanceado, minería,
+reciclaje, granel/Big Bag, tela/rafia) y clasifica a cada proveedor/competidor según las que
+cubre. Esas industrias se muestran como **etiquetas** en las tarjetas y puedes **filtrar** el
+Repositorio y la Competencia por industria; también van como columna en el CSV.
+
 ## ⚠️ Importante: tus datos guardados NO están en este código
 
 El código (lo que ves aquí) es solo la aplicación. **Los proveedores y competidores que
