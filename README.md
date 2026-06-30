@@ -22,6 +22,9 @@ Componente React (`src/SupplierScout.tsx`) con tres módulos en pestañas:
    - **Puerto más cercano**: para cada proveedor se calcula el puerto de exportación
      más cercano (base curada de puertos del bloque TIPAT) con su distancia en km;
      en el mapa se dibuja una línea al puerto. Se incluye en la tarjeta y en el CSV.
+   - **Agregar por URL**: ¿conoces un fabricante que la búsqueda no trae? Pega su sitio
+     web (o su nombre) y la IA lo investiga, lo analiza con el mismo esquema y lo agrega
+     a tus resultados para revisarlo y guardarlo (lo incluye aunque su país no sea TIPAT).
 2. **Repositorio** — guarda proveedores, marca potencial/contactado, añade notas y
    exporta a CSV (con puerto cercano, distancia y coordenadas). Incluye también la
    vista **Lista/Mapa** (mapa mundial de los proveedores guardados, respeta los

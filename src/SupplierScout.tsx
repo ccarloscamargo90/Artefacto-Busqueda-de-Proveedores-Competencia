@@ -481,6 +481,7 @@ export default function SupplierScout() {
   const [loading, setLoading] = useState(false); const [error, setError] = useState(null); const [appending, setAppending] = useState(false);
   const [suppliers, setSuppliers] = useState([]); const [summary, setSummary] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
+  const [supUrl, setSupUrl] = useState(""); const [supUrlLoading, setSupUrlLoading] = useState(false); const [supUrlError, setSupUrlError] = useState(null);
   const [sortBy, setSortBy] = useState("score"); const [onlyCptpp, setOnlyCptpp] = useState(false);
   const [searchView, setSearchView] = useState("list");
   const [addedMsg, setAddedMsg] = useState("");
@@ -675,6 +676,27 @@ export default function SupplierScout() {
     } catch (e) { setError(e.message || "Error."); if (!append) { setSuppliers([]); setHasSearched(true); } }
     finally { if (append) setAppending(false); else setLoading(false); }
   }
+  // Agrega un proveedor que el usuario ya conoce a partir de su URL (o nombre): la IA lo
+  // investiga, lo analiza con el mismo esquema y lo deja en los resultados para guardar.
+  async function addSupplierByUrl() {
+    const q = supUrl.trim();
+    if (!q) { setSupUrlError("Pega la URL del sitio (o el nombre del fabricante)."); return; }
+    setSupUrlLoading(true); setSupUrlError(null);
+    try {
+      const prompt = `Analiza UN fabricante/proveedor específico que YA conozco, a partir de este dato: "${q}". Investígalo en la web (su sitio oficial, catálogo, directorios) y devuelve EXACTAMENTE esa empresa (no sugieras otras) con país, ciudad/provincia, coordenadas lat/lng aproximadas, productos (saco/empaque de polipropileno), capacidad estimada, certificaciones, sitio web, email, teléfono y sourceUrl. Si "${q}" es una URL, úsala como su sitio web y fuente principal. INCLÚYELO aunque su país NO sea miembro TIPAT/CPTPP: pon su país real y, si no es TIPAT, cptppOrigin="no". Datos reales y verificables; lo que no encuentres = "no disponible".`;
+      const { list } = await callClaude(SYSTEM_PROMPT, prompt, "suppliers", 3000);
+      const cand = (list || []).filter((s) => s && s.company && s.company.trim());
+      if (!cand.length) { setSupUrlError("No pude identificar al proveedor desde ese dato. Revisa la URL o prueba con el nombre."); return; }
+      const seen = new Set([...suppliers, ...repo].map((s) => makeId(s)));
+      const fresh = cand.filter((s) => !seen.has(makeId(s)));
+      if (!fresh.length) { setSupUrlError("Ese proveedor ya está en tus resultados o en el repositorio."); return; }
+      setSuppliers((prev) => [...fresh, ...prev].map((s, i) => ({ ...s, _id: i })));
+      setHasSearched(true);
+      setSupUrl("");
+      setAddedMsg(`+${fresh.length} desde URL — revísalo y pulsa Guardar`); setTimeout(() => setAddedMsg(""), 4000);
+    } catch (e) { setSupUrlError(e.message || "No se pudo analizar la URL. Reintenta."); }
+    finally { setSupUrlLoading(false); }
+  }
   async function searchComp(append = false) {
     if (append) setCompAppending(true); else setCompLoading(true);
     setCompError(null);
@@ -827,6 +849,12 @@ export default function SupplierScout() {
                 <div><Label>Certificaciones</Label><div className="flex flex-wrap gap-2">{CERTS.map((c) => (<Chip key={c} active={selectedCerts.includes(c)} onClick={() => toggleCert(c)} accent={c === "Origen TIPAT"}>{c}</Chip>))}</div></div>
               </div>
               <button onClick={() => search()} disabled={loading} className="mt-6 w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-6 py-3 rounded-lg transition-colors">{loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}{loading ? "Buscando en la web…" : "Buscar proveedores"}</button>
+            </div>
+            <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 mb-6">
+              <Label>¿Conoces un proveedor que falta? Pega su sitio web</Label>
+              <div className="flex flex-col sm:flex-row gap-3"><input type="text" value={supUrl} onChange={(e) => setSupUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addSupplierByUrl(); }} placeholder="https://fabricante.com  ·  (o el nombre del fabricante)" className={fieldCls} /><button onClick={addSupplierByUrl} disabled={supUrlLoading} className="shrink-0 inline-flex items-center justify-center gap-2 border border-red-700/60 text-red-300 hover:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold px-6 py-2.5 rounded-lg transition-colors">{supUrlLoading ? <Loader2 size={17} className="animate-spin" /> : <Plus size={17} />}{supUrlLoading ? "Analizando…" : "Analizar y agregar"}</button></div>
+              {supUrlError && <p className="text-[11px] text-red-300 mt-2 flex items-center gap-1.5"><AlertTriangle size={12} /> {supUrlError}</p>}
+              <p className="text-[11px] text-neutral-600 mt-2">La IA lee su sitio y la web, lo analiza igual que los demás y lo agrega a tus resultados para que lo revises y guardes (aunque su país no sea TIPAT).</p>
             </div>
             <div className="bg-neutral-900/40 border border-neutral-800 rounded-xl mb-6 overflow-hidden">
               <button onClick={() => setShowBenchmark((v) => !v)} className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-neutral-900/60 transition-colors"><div className="flex items-center gap-2.5"><Target size={16} className="text-red-500" /><span className="text-sm font-medium text-neutral-200">Benchmark · {benchmark.name || "proveedor actual"}</span><span className="text-[10px] uppercase tracking-wider bg-red-600/20 text-red-300 border border-red-600/30 px-2 py-0.5 rounded">Actual</span></div><ChevronDown size={16} className={`text-neutral-500 transition-transform ${showBenchmark ? "rotate-180" : ""}`} /></button>
